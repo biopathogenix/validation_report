@@ -312,7 +312,7 @@ function originalWordXml(){
 function finalBaseParagraph(index,text){
   if(index===9) return 'Report ID / version: {{reportId}}    Report date: {{date}}';
   const replacements={
-    8:[['Report for  Using','Report for {{assay}} Using'],['Applied Biosystems QuantStudio 5 384-Well Format','Applied Biosystems {{wellFormat}}']],
+    8:[['Report for  Using','Report for {{assay}} Using'],['Applied Biosystems QuantStudio 5 384-Well Format','{{wellFormat}}']],
     22:[['experiments for the .','experiments for the {{assay}}.']],
     25:[['associated with  experiments','associated with {{assay}} experiments']],
     27:[['from a  by','from a {{media}} by'],['sets for  containing','sets for {{assay}} containing']],
@@ -444,9 +444,12 @@ function createFinalWordBlob(){
   tables.forEach((t,ti)=>{
     if(imported.has(ti)) return;
     if(ti===0){
-      const coverRows=finalChildren(t,'tr');
-      if(document.getElementById('removeReportLab')?.checked)coverRows[0]?.remove();
-      if(document.getElementById('removeReportAuthor')?.checked)finalChildren(t,'tr')[6]?.remove();
+      const removeRows=[];
+      finalChildren(t,'tr').forEach(row=>{
+        const label=finalText(finalChildren(row,'tc')[0]||row).trim().toLowerCase();
+        if((document.getElementById('removeReportLab')?.checked&&label==='company name:')||(document.getElementById('removeReportAuthor')?.checked&&label==='prepared by'))removeRows.push(row);
+      });
+      removeRows.forEach(row=>row.remove());
     }
     finalChildren(t,'tr').forEach((r,ri)=>finalChildren(r,'tc').forEach((c,ci)=>{
       const original=finalText(c),text=finalTokens(finalCellEdits[`${ti}:${ri}:${ci}`]??finalBaseCell(ti,ri,ci,original));

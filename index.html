@@ -287,6 +287,16 @@
         </div>
         <div id="prefixTags" class="tag-list"></div>
       </div>
+      <div class="panel" id="availabilityPanel" style="display:none;">
+        <h2 style="margin-bottom:6px;">Study data availability</h2>
+        <div class="hint" style="margin-bottom:10px;">Based on sample IDs in the imported data (not file names). Availability does not mean the study passed validation.</div>
+        <div id="availabilityResults"></div>
+      </div>
+      <div class="panel" id="sanityPanel" style="display:none;">
+        <h2 style="margin-bottom:8px;">Data sanity checks</h2>
+        <div class="hint" style="margin-bottom:10px;">Warnings do not change uploaded measurements or study calculations.</div>
+        <div id="sanityResults"></div>
+      </div>
       <div class="panel" id="fileTrackerPanel" style="display:none;">
         <h2 style="margin-bottom:10px;">Loaded files</h2>
         <table><thead><tr><th>File</th><th>Day / run label</th><th class="num">Rows</th><th></th></tr></thead><tbody id="fileTrackerBody"></tbody></table>
@@ -423,6 +433,11 @@ function loadFile(file){
 }
 
 function processParsedRows(fileName, rawRows){
+  const columns = rawRows.length ? Object.keys(rawRows[0]).map(k => normalize(k)) : [];
+  if (!['sample','target','cq'].every(k => columns.includes(k))){
+    alert(`Cannot import ${fileName}: required columns are Sample, Target, and Cq.`);
+    return;
+  }
   const day = guessDayLabel(fileName);
   const parsed = rawRows.map(r => {
     const sample = (r.Sample || r.sample || r.SAMPLE || '').toString().trim();
@@ -445,7 +460,8 @@ function processParsedRows(fileName, rawRows){
 function loadCsvFile(file){
   Papa.parse(file, {
     header: true, skipEmptyLines: true,
-    complete: function(res){ processParsedRows(file.name, res.data); }
+    complete: function(res){ if (res.errors.length) console.warn("CSV parse warnings", res.errors); processParsedRows(file.name, res.data); },
+    error: function(err){ alert(`Cannot read ${file.name}: ${err.message || err}`); }
   });
 }
 
@@ -466,6 +482,8 @@ function afterDataLoaded(){
   renderDataKpis();
   renderFileTracker();
   renderPreview();
+  renderSanityChecks();
+  renderStudyAvailability();
   renderStudySummary();
   STUDY_DEFS.forEach(d => ensureStudyTabDom(d.key));
   renderAllStudies();
@@ -544,6 +562,104 @@ function renderPreview(){
     const s = getSanitizedCq(r);
     return `<tr><td>${escapeHtml(r.sample)}</td><td>${escapeHtml(r.target)}</td><td class="num">${escapeHtml(s.text)}</td><td>${escapeHtml(r.day||'')}</td></tr>`;
   }).join('');
+}
+
+function renderStudyAvailability(){
+  const panel = document.getElementById('availabilityPanel');
+  const out = document.getElementById('availabilityResults');
+  if (!panel || !out) return;
+  panel.style.display = rawData.length ? 'block' : 'none';
+  if (!rawData.length) return;
+
+  // All availability filters use sample IDs ONLY, never file/day names.
+  const match = word => word && rawData.filter(r => r._sampleNorm && r._sampleNorm.includes(normalize(word)));
+  const metric = arr => ({rows: arr.length, samples: new Set(arr.map(r=>r.sample)).size});
+  const checks = [];
+  function add(label, arr, detail, eligible){
+    const m = metric(arr);
+    checks.push({label, ...m, detail, eligible: eligible === undefined ? m.samples > 0 : eligible});
+  }
+  const accuracyKey = getCorrelationFilter().trim();
+  const lodKey = getSensitivityFilter().trim();
+  add('Correlation Study', match(accuracyKey) || [], 'Sample keyword: ' + (accuracyKey || '(blank)'), Boolean(accuracyKey));
+  add('Sensitivity Study (LOD)', match(lodKey) || [], 'Sample keyword: ' + (lodKey || '(blank)'), Boolean(lodKey));
+
+  ['intra','inter'].forEach(key => {
+    const filters = getPrecisionFilters(key);
+    const pc = match(filters.pc) || [];
+    const nc = match(filters.nc) || [];
+    const combined = [...pc, ...nc];
+    add(key === 'intra' ? 'Intra-Study' : 'Inter-Study', combined,
+      'Positive control: ' + metric(pc).samples + ' sample(s); negative control: ' + metric(nc).samples + ' sample(s)',
+      Boolean(pc.length && nc.length));
+  });
+
+  const linKey = getLinearityFilter().trim();
+  const lin = match(linKey) || [];
+  const tiers = typeof LINEARITY_TIERS === 'undefined' ? [] : LINEARITY_TIERS.filter(t => lin.some(r => matchLinearityCopies(r.sample, t.copies)));
+  add('Linearity Study',lin, `${tiers.length} distinct copy level(s) found; at least 2 required for regression`, tiers.length >= 2);
+
+  const infFilters = getInterferenceFilters();
+  const base = match(infFilters.baseline) || [];
+  const interfering = match(infFilters.interference) || [];
+  const spiked = r => r._sampleNorm.includes('int') || r._sampleNorm.includes('interfer') || r._sampleNorm.includes('spike') || r.sample.includes('+');
+  const infArm = interfering.filter(spiked);
+  const baselineArm = base.filter(r => !spiked(r));
+  const basePairs = new Set(baselineArm.map(r => r.target+'||'+extractSpecimenId(r.sample)));
+  const paired = infArm.filter(r => basePairs.has(r.target+'||'+extractSpecimenId(r.sample)));
+  add('Interference Study',[...baselineArm,...infArm], `${paired.length} paired target/specimen measurement(s) found`, paired.length > 0);
+
+  const stab = getStabilityFilters();
+  const stabBase = match(stab.day1) || [];
+  const stabArms = [stab.day3,stab.day5,stab.day7,stab.elution3].map(k=>match(k)||[]);
+  const stabBasePairs = new Set(stabBase.map(r=>r.target+'||'+extractSpecimenId(r.sample)));
+  const stabMatchedArms = stabArms.reduce((n, rows) => n + rows.filter(r=>stabBasePairs.has(r.target+'||'+extractSpecimenId(r.sample))).length,0);
+  add('Stability Study',[...stabBase,...stabArms.flat()], `${stabMatchedArms} matched baseline/time-point measurement(s) found`, stabMatchedArms > 0);
+
+  out.innerHTML = `<div class="matrix-table-wrap"><table><thead><tr><th>Study</th><th>Status</th><th class="num">Rows</th><th class="num">Unique samples</th><th>Check details</th></tr></thead><tbody>`
+    + checks.map(c => `<tr><td>${escapeHtml(c.label)}</td><td style="font-weight:600;color:${c.eligible && c.samples ? 'var(--teal-dark)' : 'var(--amber)'};">${c.eligible && c.samples ? 'Data found' : (c.samples ? 'Incomplete' : 'No matching data')}</td><td class="num">${c.rows}</td><td class="num">${c.samples}</td><td>${escapeHtml(c.detail)}</td></tr>`).join('')
+    + '</tbody></table></div>';
+}
+
+function renderSanityChecks(){
+  const panel = document.getElementById('sanityPanel');
+  const results = document.getElementById('sanityResults');
+  if (!panel || !results) return;
+  panel.style.display = rawData.length ? 'block' : 'none';
+  if (!rawData.length) return;
+
+  const warnings = [];
+  const count = (predicate) => rawData.filter(predicate).length;
+  const missingSample = count(r => !r.sample);
+  const missingTarget = count(r => !r.target);
+  if (missingSample) warnings.push(`${missingSample} rows have no sample ID.`);
+  if (missingTarget) warnings.push(`${missingTarget} rows have no target name.`);
+  const invalidCq = count(r => r.cqRaw && r.cqNum === null && !/^(undetermined|n\/?a|no ct)$/i.test(r.cqRaw));
+  if (invalidCq) warnings.push(`${invalidCq} rows contain non-numeric or unrecognized Cq values; check the source.`);
+  const outOfRange = count(r => r.cqNum !== null && !isCqPositive(r.cqNum));
+  if (outOfRange) warnings.push(`${outOfRange} Cq values are outside the current accepted Cq limits and display as UNDETERMINED.`);
+  const duplicateKeys = new Map();
+  rawData.forEach(r => {
+    if (!r.sample || !r.target) return;
+    const key = JSON.stringify([r.file, r.sample, r.target]);
+    duplicateKeys.set(key, (duplicateKeys.get(key)||0) + 1);
+  });
+  const duplicateRows = [...duplicateKeys.values()].reduce((n,v) => n+Math.max(0,v-1),0);
+  if (duplicateRows) warnings.push(`${duplicateRows} repeated file/sample/target records may overwrite each other in matrix views.`);
+  const checks = [
+    ['Correlation Study', normalize(getCorrelationFilter()), 'Accuracy'],
+    ['Sensitivity Study', normalize(getSensitivityFilter()), 'LOD']
+  ];
+  checks.forEach(([title, keyword, defaultName]) => {
+    const matching = keyword ? rawData.filter(r => r._sampleNorm.includes(keyword)) : [];
+    const unique = new Set(matching.map(r => r.sample)).size;
+    if (!keyword) warnings.push(`${title}: empty filter. Enter a sample keyword (e.g., ${defaultName}).`);
+    else if (!unique) warnings.push(`${title}: no sample IDs match "${keyword}". This study will remain empty; other study data will not be substituted.`);
+  });
+  results.innerHTML = warnings.length
+    ? `<div style="font-weight:600;color:var(--amber);margin-bottom:8px;">${warnings.length} check(s) need review</div>` +
+      `<ul style="margin:0;padding-left:20px;">${warnings.map(w => `<li style="margin:4px 0;">${escapeHtml(w)}</li>`).join('')}</ul>`
+    : '<div style="font-weight:600;color:var(--teal-dark);">Checks passed: no obvious data issues detected.</div>';
 }
 
 function sampleFilterMatches(row, filterTextNorm){
@@ -886,11 +1002,10 @@ function getCorrelationFilter(){
 
 function buildCorrelationMatrix(){
   const filterTextNorm = normalize(getCorrelationFilter());
-  let pool = filterTextNorm ? rawData.filter(r => r._sampleNorm && r._sampleNorm.includes(filterTextNorm)) : [];
-  if (!pool.length && filterTextNorm) {
-    pool = rawData.filter(r => sampleFilterMatches(r, filterTextNorm));
-  }
-  if (!pool.length) pool = rawData.slice();
+  // Restrict correlation to matching sample IDs, without falling back to other studies.
+  const pool = filterTextNorm
+    ? rawData.filter(r => r._sampleNorm && r._sampleNorm.includes(filterTextNorm))
+    : [];
 
   const samples = Array.from(new Set(pool.map(r=>r.sample))).sort(naturalSort);
   const targets = Array.from(new Set(pool.map(r=>r.target))).sort(naturalSort);
@@ -915,6 +1030,7 @@ function renderCorrelationMatrix(){
   if (!holder) return;
   if (!rawData.length){ holder.innerHTML = '<div class="empty">Upload data first.</div>'; return; }
   const { samples, rows } = buildCorrelationMatrix();
+  renderSanityChecks();
   if (!samples.length){ holder.innerHTML = '<div class="empty">No samples match this filter.</div>'; return; }
 
   let html = `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
@@ -988,11 +1104,10 @@ function getSensitivityFilter(){
 
 function buildSensitivityMatrix(){
   const filterTextNorm = normalize(getSensitivityFilter());
-  let pool = filterTextNorm ? rawData.filter(r => r._sampleNorm && r._sampleNorm.includes(filterTextNorm)) : [];
-  if (!pool.length && filterTextNorm) {
-    pool = rawData.filter(r => sampleFilterMatches(r, filterTextNorm));
-  }
-  if (!pool.length) pool = rawData.slice();
+  // Restrict sensitivity to matching sample IDs, without falling back to other studies.
+  const pool = filterTextNorm
+    ? rawData.filter(r => r._sampleNorm && r._sampleNorm.includes(filterTextNorm))
+    : [];
 
   let samples = Array.from(new Set(pool.map(r => r.sample))).sort(naturalSort);
   if (sensMaxReps && sensMaxReps > 0 && samples.length > sensMaxReps) {
@@ -1020,6 +1135,7 @@ function renderSensitivityMatrix(){
   if (!holder) return;
   if (!rawData.length){ holder.innerHTML = '<div class="empty">Upload data first.</div>'; return; }
   const { samples, rows } = buildSensitivityMatrix();
+  renderSanityChecks();
   if (!samples.length){ holder.innerHTML = '<div class="empty">No samples match this sensitivity / LOD filter.</div>'; return; }
 
   let html = `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
@@ -1825,6 +1941,10 @@ document.getElementById('earlyCtInput').addEventListener('input', e => {
   const v = parseFloat(e.target.value);
   earlyCt = isFinite(v) ? v : 13;
   if (eliminateEarly) renderAllStudies();
+});
+
+document.addEventListener('input', e => {
+  if (e.target && /^(corrFilter|sensFilter|intraPcFilter|intraNcFilter|interPcFilter|interNcFilter|linFilter|infBaselineFilter|infInterferenceFilter|stabDay1Filter|stabDay3Filter|stabDay5Filter|stabDay7Filter|stabElution3Filter)$/.test(e.target.id)) renderStudyAvailability();
 });
 
 document.addEventListener('click', e => {

@@ -91,6 +91,12 @@
   .kpi{border:1px solid var(--line);border-radius:6px;padding:10px 16px;min-width:120px;}
   .kpi .n{font-size:20px;font-weight:700;font-family:var(--mono);}
   .kpi .l{font-size:11.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em;}
+  #panelFilterBar{align-items:center;gap:12px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px;margin-bottom:14px;}
+  #panelFilterBar .plabel{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);}
+  #panelChips{display:flex;gap:6px;flex-wrap:wrap;}
+  .pchip{border:1px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:14px;padding:3px 11px;font-size:12.5px;cursor:pointer;font-family:inherit;}
+  .pchip .pn{font-family:var(--mono);font-size:10.5px;opacity:.7;margin-left:3px;}
+  .pchip.on{background:var(--teal-dark,#0f6b6b);border-color:var(--teal-dark,#0f6b6b);color:#fff;}
   .tag-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
   .tag{background:#eef2f3;border-radius:3px;padding:2px 7px;font-size:11.5px;font-family:var(--mono);color:var(--ink-soft);}
 
@@ -270,6 +276,12 @@
   </nav>
 
   <main>
+    <div id="panelFilterBar" class="no-print" style="display:none;">
+      <span class="plabel">Panel filter</span>
+      <div id="panelChips"></div>
+      <span id="panelSummary" class="hint"></span>
+      <span class="hint" style="margin-left:auto;">Click = only that panel &middot; Ctrl/Cmd-click = add/remove</span>
+    </div>
     <section id="tab-data" class="tabpane">
       <h1>Import assay data</h1>
       <div class="sub">Upload CSV or QuantStudio / EDS Excel exports (.xlsx). Merges runs automatically without replacing existing data.</div>
@@ -287,6 +299,20 @@
         </div>
         <div id="prefixTags" class="tag-list"></div>
       </div>
+      <div class="panel no-print" id="sessionPanel">
+        <div class="flex-between">
+          <div>
+            <h2 style="margin-bottom:2px;">Session</h2>
+            <div class="hint" id="sessionStatus">Auto-save is on: data, settings, filters and the open tab are kept in this browser.</div>
+          </div>
+          <div class="row">
+            <button class="btn secondary small" id="saveSessionBtn">Save session file</button>
+            <button class="btn secondary small" id="loadSessionBtn">Open session file</button>
+            <button class="btn ghost small" id="resetSessionBtn">Start fresh</button>
+            <input type="file" id="sessionFileInput" accept=".json,application/json" style="display:none;">
+          </div>
+        </div>
+      </div>
       <div class="panel" id="availabilityPanel" style="display:none;">
         <h2 style="margin-bottom:6px;">Study data availability</h2>
         <div class="hint" style="margin-bottom:10px;">Based on sample IDs in the imported data (not file names). Availability does not mean the study passed validation.</div>
@@ -302,9 +328,9 @@
         <table><thead><tr><th>File</th><th>Day / run label</th><th class="num">Rows</th><th></th></tr></thead><tbody id="fileTrackerBody"></tbody></table>
       </div>
       <div class="panel" id="previewPanel" style="display:none;">
-        <div class="flex-between"><h2 style="margin-bottom:8px;">Preview (first 60 rows)</h2><button class="btn ghost small no-print" id="clearDataBtn">Clear all data</button></div>
+        <div class="flex-between"><h2 style="margin-bottom:8px;">Preview (first 60 rows of active panels)</h2><button class="btn ghost small no-print" id="clearDataBtn">Clear all data</button></div>
         <div style="max-height:420px;overflow-y:auto;">
-          <table><thead><tr><th>Sample</th><th>Target</th><th class="num">Cq</th><th>Day/File</th></tr></thead><tbody id="previewBody"></tbody></table>
+          <table><thead><tr><th>Sample</th><th>Panel</th><th>Target</th><th class="num">Cq</th><th>Day/File</th></tr></thead><tbody id="previewBody"></tbody></table>
         </div>
       </div>
     </section>
@@ -439,13 +465,16 @@ function processParsedRows(fileName, rawRows){
     return;
   }
   const day = guessDayLabel(fileName);
+  const panelKey = Object.keys(rawRows[0]||{}).find(k => ['panel','panelname','assayname'].includes(normalize(k)));
   const parsed = rawRows.map(r => {
     const sample = (r.Sample || r.sample || r.SAMPLE || '').toString().trim();
     const target = (r.Target || r.target || r.TARGET || '').toString().trim();
     const cqRaw = (r.Cq !== undefined) ? r.Cq : (r.cq !== undefined ? r.cq : (r.CQ !== undefined ? r.CQ : ''));
     const cqRawStr = (cqRaw === undefined || cqRaw === null) ? '' : String(cqRaw).trim();
+    const colPanel = panelKey ? String(r[panelKey] === undefined || r[panelKey] === null ? '' : r[panelKey]).trim() : '';
     return {
       sample, target, cqRaw: cqRawStr, cqNum: parseCq(cqRaw),
+      panel: colPanel || derivePanel(sample),
       file: fileName, day,
       _sampleNorm: normalize(sample),
       _search: normalize(sample + ' ' + day + ' ' + fileName)
@@ -478,7 +507,72 @@ function loadXlsxFile(file){
   reader.readAsArrayBuffer(file);
 }
 
+
+/* ---------------- Panel filter ---------------- */
+const NO_PANEL = '(no panel)';
+let excludedPanels = new Set();
+let _activeCache = {src:null, len:-1, sig:'', rows:[]};
+const PANEL_STOPWORDS = ['accuracy','correlation','lod','intra','inter','lin','interference','stability','day','pc','nc','ntc','pos','neg'];
+
+// Panel = text before the first "_" in the sample ID (e.g. ABR_IntraNC_01 -> ABR),
+// unless that text is just a study/control keyword (e.g. Intra_PC_01).
+function derivePanel(sample){
+  const m = String(sample||'').match(/^([A-Za-z0-9]+)[_]/);
+  if (!m) return NO_PANEL;
+  const n = normalize(m[1]);
+  if (PANEL_STOPWORDS.some(w => n === w || n.startsWith(w) && /^\d*$/.test(n.slice(w.length)))) return NO_PANEL;
+  return m[1].toUpperCase();
+}
+
+function allPanels(){
+  const counts = new Map();
+  rawData.forEach(r => counts.set(r.panel || NO_PANEL, (counts.get(r.panel || NO_PANEL)||0) + 1));
+  return Array.from(counts.entries()).sort((a,b) => naturalSort(a[0], b[0]));
+}
+
+function getActiveData(){
+  const sig = Array.from(excludedPanels).sort().join('|');
+  if (_activeCache.src === rawData && _activeCache.len === rawData.length && _activeCache.sig === sig) return _activeCache.rows;
+  const rows = excludedPanels.size ? rawData.filter(r => !excludedPanels.has(r.panel || NO_PANEL)) : rawData;
+  _activeCache = {src: rawData, len: rawData.length, sig, rows};
+  return rows;
+}
+
+function renderPanelFilter(){
+  const bar = document.getElementById('panelFilterBar');
+  const chips = document.getElementById('panelChips');
+  if (!bar || !chips) return;
+  const panels = allPanels();
+  // drop exclusions for panels that no longer exist
+  excludedPanels.forEach(p => { if (!panels.some(x => x[0] === p)) excludedPanels.delete(p); });
+  const real = panels.filter(p => p[0] !== NO_PANEL);
+  bar.style.display = (rawData.length && real.length) ? 'flex' : 'none';
+  if (!real.length) return;
+  const allOn = excludedPanels.size === 0;
+  chips.innerHTML =
+    `<button class="pchip ${allOn?'on':''}" data-panel="__all__">All panels</button>` +
+    panels.map(([p,n]) => `<button class="pchip ${excludedPanels.has(p)?'':'on'}" data-panel="${escapeHtml(p)}">${escapeHtml(p)} <span class="pn">${n}</span></button>`).join('');
+  const act = getActiveData();
+  document.getElementById('panelSummary').textContent = allOn ? '' : `${act.length} of ${rawData.length} rows included`;
+}
+
+function onPanelChipClick(panel, multi){
+  const panels = allPanels().map(p => p[0]);
+  if (panel === '__all__'){
+    excludedPanels = new Set();
+  } else if (multi){
+    // ctrl/cmd-click: toggle this panel in the current selection
+    if (excludedPanels.has(panel)) excludedPanels.delete(panel); else excludedPanels.add(panel);
+    if (excludedPanels.size === panels.length) excludedPanels = new Set();
+  } else {
+    // plain click: show only this panel
+    excludedPanels = new Set(panels.filter(p => p !== panel));
+  }
+  afterDataLoaded();
+}
+
 function afterDataLoaded(){
+  renderPanelFilter();
   renderDataKpis();
   renderFileTracker();
   renderPreview();
@@ -489,6 +583,7 @@ function afterDataLoaded(){
   renderAllStudies();
   document.getElementById('cnt-data').textContent = rawData.length;
   refreshDatalists();
+  scheduleSave();
 }
 
 function renderAllStudies(){
@@ -558,9 +653,9 @@ function renderPreview(){
   const panel = document.getElementById('previewPanel');
   if (!rawData.length){ panel.style.display='none'; return; }
   panel.style.display='block';
-  body.innerHTML = rawData.slice(0,60).map(r => {
+  body.innerHTML = getActiveData().slice(0,60).map(r => {
     const s = getSanitizedCq(r);
-    return `<tr><td>${escapeHtml(r.sample)}</td><td>${escapeHtml(r.target)}</td><td class="num">${escapeHtml(s.text)}</td><td>${escapeHtml(r.day||'')}</td></tr>`;
+    return `<tr><td>${escapeHtml(r.sample)}</td><td>${escapeHtml(r.panel||'')}</td><td>${escapeHtml(r.target)}</td><td class="num">${escapeHtml(s.text)}</td><td>${escapeHtml(r.day||'')}</td></tr>`;
   }).join('');
 }
 
@@ -568,11 +663,11 @@ function renderStudyAvailability(){
   const panel = document.getElementById('availabilityPanel');
   const out = document.getElementById('availabilityResults');
   if (!panel || !out) return;
-  panel.style.display = rawData.length ? 'block' : 'none';
-  if (!rawData.length) return;
+  panel.style.display = getActiveData().length ? 'block' : 'none';
+  if (!getActiveData().length) return;
 
   // All availability filters use sample IDs ONLY, never file/day names.
-  const match = word => word && rawData.filter(r => r._sampleNorm && r._sampleNorm.includes(normalize(word)));
+  const match = word => word && getActiveData().filter(r => r._sampleNorm && r._sampleNorm.includes(normalize(word)));
   const metric = arr => ({rows: arr.length, samples: new Set(arr.map(r=>r.sample)).size});
   const checks = [];
   function add(label, arr, detail, eligible){
@@ -625,11 +720,11 @@ function renderSanityChecks(){
   const panel = document.getElementById('sanityPanel');
   const results = document.getElementById('sanityResults');
   if (!panel || !results) return;
-  panel.style.display = rawData.length ? 'block' : 'none';
-  if (!rawData.length) return;
+  panel.style.display = getActiveData().length ? 'block' : 'none';
+  if (!getActiveData().length) return;
 
   const warnings = [];
-  const count = (predicate) => rawData.filter(predicate).length;
+  const count = (predicate) => getActiveData().filter(predicate).length;
   const missingSample = count(r => !r.sample);
   const missingTarget = count(r => !r.target);
   if (missingSample) warnings.push(`${missingSample} rows have no sample ID.`);
@@ -639,7 +734,7 @@ function renderSanityChecks(){
   const outOfRange = count(r => r.cqNum !== null && !isCqPositive(r.cqNum));
   if (outOfRange) warnings.push(`${outOfRange} Cq values are outside the current accepted Cq limits and display as UNDETERMINED.`);
   const duplicateKeys = new Map();
-  rawData.forEach(r => {
+  getActiveData().forEach(r => {
     if (!r.sample || !r.target) return;
     const key = JSON.stringify([r.file, r.sample, r.target]);
     duplicateKeys.set(key, (duplicateKeys.get(key)||0) + 1);
@@ -651,7 +746,7 @@ function renderSanityChecks(){
     ['Sensitivity Study', normalize(getSensitivityFilter()), 'LOD']
   ];
   checks.forEach(([title, keyword, defaultName]) => {
-    const matching = keyword ? rawData.filter(r => r._sampleNorm.includes(keyword)) : [];
+    const matching = keyword ? getActiveData().filter(r => r._sampleNorm.includes(keyword)) : [];
     const unique = new Set(matching.map(r => r.sample)).size;
     if (!keyword) warnings.push(`${title}: empty filter. Enter a sample keyword (e.g., ${defaultName}).`);
     else if (!unique) warnings.push(`${title}: no sample IDs match "${keyword}". This study will remain empty; other study data will not be substituted.`);
@@ -1004,7 +1099,7 @@ function buildCorrelationMatrix(){
   const filterTextNorm = normalize(getCorrelationFilter());
   // Restrict correlation to matching sample IDs, without falling back to other studies.
   const pool = filterTextNorm
-    ? rawData.filter(r => r._sampleNorm && r._sampleNorm.includes(filterTextNorm))
+    ? getActiveData().filter(r => r._sampleNorm && r._sampleNorm.includes(filterTextNorm))
     : [];
 
   const samples = Array.from(new Set(pool.map(r=>r.sample))).sort(naturalSort);
@@ -1016,8 +1111,9 @@ function buildCorrelationMatrix(){
     const cells = samples.map(s => lookup[t+'|||'+s] || null);
     const posCount = cells.filter(c => c && isCqPositive(c.cqNum)).length;
     const total = cells.length;
-    const concordant = posCount;
-    const negCount = total - posCount;
+    // Negative = measured but not positive (undetermined / outside Cq limits). Missing wells are not counted.
+    const negCount = cells.filter(c => c && !isCqPositive(c.cqNum)).length;
+    const concordant = posCount + negCount;   // e.g. 14/20 positive + 6/20 negative = 20/20 concordant
     const agreement = total ? (concordant/total)*100 : null;
     return { target:t, cells, posCount, negCount, concordant, total, agreement };
   });
@@ -1028,7 +1124,7 @@ function buildCorrelationMatrix(){
 function renderCorrelationMatrix(){
   const holder = document.getElementById('corrMatrixHolder');
   if (!holder) return;
-  if (!rawData.length){ holder.innerHTML = '<div class="empty">Upload data first.</div>'; return; }
+  if (!getActiveData().length){ holder.innerHTML = `<div class="empty">${rawData.length ? 'No rows in the selected panel(s).' : 'Upload data first.'}</div>`; return; }
   const { samples, rows } = buildCorrelationMatrix();
   renderSanityChecks();
   if (!samples.length){ holder.innerHTML = '<div class="empty">No samples match this filter.</div>'; return; }
@@ -1106,7 +1202,7 @@ function buildSensitivityMatrix(){
   const filterTextNorm = normalize(getSensitivityFilter());
   // Restrict sensitivity to matching sample IDs, without falling back to other studies.
   const pool = filterTextNorm
-    ? rawData.filter(r => r._sampleNorm && r._sampleNorm.includes(filterTextNorm))
+    ? getActiveData().filter(r => r._sampleNorm && r._sampleNorm.includes(filterTextNorm))
     : [];
 
   let samples = Array.from(new Set(pool.map(r => r.sample))).sort(naturalSort);
@@ -1133,7 +1229,7 @@ function buildSensitivityMatrix(){
 function renderSensitivityMatrix(){
   const holder = document.getElementById('sensMatrixHolder');
   if (!holder) return;
-  if (!rawData.length){ holder.innerHTML = '<div class="empty">Upload data first.</div>'; return; }
+  if (!getActiveData().length){ holder.innerHTML = `<div class="empty">${rawData.length ? 'No rows in the selected panel(s).' : 'Upload data first.'}</div>`; return; }
   const { samples, rows } = buildSensitivityMatrix();
   renderSanityChecks();
   if (!samples.length){ holder.innerHTML = '<div class="empty">No samples match this sensitivity / LOD filter.</div>'; return; }
@@ -1256,12 +1352,12 @@ function buildPrecisionMatrix(key){
   const pcNorm = normalize(pc);
   const ncNorm = normalize(nc);
 
-  let poolPc = pcNorm ? rawData.filter(r => sampleFilterMatches(r, pcNorm)) : [];
-  let poolNc = ncNorm ? rawData.filter(r => sampleFilterMatches(r, ncNorm)) : [];
+  let poolPc = pcNorm ? getActiveData().filter(r => sampleFilterMatches(r, pcNorm)) : [];
+  let poolNc = ncNorm ? getActiveData().filter(r => sampleFilterMatches(r, ncNorm)) : [];
 
   if (!poolPc.length && !poolNc.length){
     const general = normalize(studyDef(key).keyword);
-    poolPc = rawData.filter(r => sampleFilterMatches(r, general));
+    poolPc = getActiveData().filter(r => sampleFilterMatches(r, general));
   }
 
   const pcSamples = Array.from(new Set(poolPc.map(r=>r.sample))).sort(naturalSort);
@@ -1285,7 +1381,7 @@ function buildPrecisionMatrix(key){
 function renderPrecisionMatrix(key){
   const holder = document.getElementById(key+'MatrixHolder');
   if (!holder) return;
-  if (!rawData.length){ holder.innerHTML = '<div class="empty">Upload data first.</div>'; return; }
+  if (!getActiveData().length){ holder.innerHTML = `<div class="empty">${rawData.length ? 'No rows in the selected panel(s).' : 'Upload data first.'}</div>`; return; }
   const { pcSamples, ncSamples, rows } = buildPrecisionMatrix(key);
   if (!pcSamples.length && !ncSamples.length){
     holder.innerHTML = `<div class="empty">No samples matched "${escapeHtml(getPrecisionFilters(key).pc)}" or "${escapeHtml(getPrecisionFilters(key).nc)}".</div>`;
@@ -1428,11 +1524,11 @@ function matchLinearityCopies(sampleStr, copies){
 
 function buildLinearityMatrix(){
   const generalFilter = normalize(getLinearityFilter());
-  let linPool = generalFilter ? rawData.filter(r => sampleFilterMatches(r, generalFilter)) : rawData.slice();
+  let linPool = generalFilter ? getActiveData().filter(r => sampleFilterMatches(r, generalFilter)) : getActiveData().slice();
   if (!linPool.length && generalFilter !== 'lin') {
-    linPool = rawData.filter(r => sampleFilterMatches(r, 'lin'));
+    linPool = getActiveData().filter(r => sampleFilterMatches(r, 'lin'));
   }
-  if (!linPool.length) linPool = rawData.slice();
+  if (!linPool.length) linPool = getActiveData().slice();
 
   const tierData = LINEARITY_TIERS.map(tier => {
     const pool = linPool.filter(r => matchLinearityCopies(r.sample, tier.copies));
@@ -1473,7 +1569,7 @@ function buildLinearityMatrix(){
 function renderLinearityMatrix(){
   const holder = document.getElementById('linMatrixHolder');
   if (!holder) return;
-  if (!rawData.length){ holder.innerHTML = '<div class="empty">Upload data first.</div>'; return; }
+  if (!getActiveData().length){ holder.innerHTML = `<div class="empty">${rawData.length ? 'No rows in the selected panel(s).' : 'Upload data first.'}</div>`; return; }
   const { tierData, rows } = buildLinearityMatrix();
   if (!rows.length){ holder.innerHTML = '<div class="empty">No data matched the linearity criteria.</div>'; return; }
 
@@ -1629,11 +1725,11 @@ function buildInterferenceMatrix(){
     return sn.includes('int') || sn.includes('interfer') || sn.includes('spike') || r.sample.includes('+');
   };
 
-  let poolInterference = rawData.filter(r => sampleFilterMatches(r, interNorm));
-  let poolBaseline = rawData.filter(r => sampleFilterMatches(r, baseNorm));
+  let poolInterference = getActiveData().filter(r => sampleFilterMatches(r, interNorm));
+  let poolBaseline = getActiveData().filter(r => sampleFilterMatches(r, baseNorm));
 
   if (baseNorm === interNorm || !poolBaseline.length || poolBaseline.some(r => poolInterference.includes(r))) {
-    const combined = rawData.filter(r => sampleFilterMatches(r, interNorm) || sampleFilterMatches(r, baseNorm));
+    const combined = getActiveData().filter(r => sampleFilterMatches(r, interNorm) || sampleFilterMatches(r, baseNorm));
     poolInterference = combined.filter(isInterSpiked);
     poolBaseline = combined.filter(r => !isInterSpiked(r));
   }
@@ -1671,7 +1767,7 @@ function buildInterferenceMatrix(){
 function renderInterferenceMatrix(){
   const holder = document.getElementById('infMatrixHolder');
   if (!holder) return;
-  if (!rawData.length){ holder.innerHTML = '<div class="empty">Upload data first.</div>'; return; }
+  if (!getActiveData().length){ holder.innerHTML = `<div class="empty">${rawData.length ? 'No rows in the selected panel(s).' : 'Upload data first.'}</div>`; return; }
   const { specimenIds, rows } = buildInterferenceMatrix();
   if (!specimenIds.length){ holder.innerHTML = '<div class="empty">No specimens match these filters.</div>'; return; }
 
@@ -1748,7 +1844,7 @@ function getStabilityFilters(){
 
 function poolAndLookup(filterText){
   const filterNorm = normalize(filterText);
-  const pool = filterNorm ? rawData.filter(r => sampleFilterMatches(r, filterNorm)) : [];
+  const pool = filterNorm ? getActiveData().filter(r => sampleFilterMatches(r, filterNorm)) : [];
   const lookup = {};
   pool.forEach(r => { const id = extractSpecimenId(r.sample); if (id) lookup[r.target+'|||'+id] = r; });
   return { pool, lookup };
@@ -1813,7 +1909,7 @@ function buildStabilityMatrix(){
 function renderStabilityMatrix(){
   const holder = document.getElementById('stabMatrixHolder');
   if (!holder) return;
-  if (!rawData.length){ holder.innerHTML = '<div class="empty">Upload data first.</div>'; return; }
+  if (!getActiveData().length){ holder.innerHTML = `<div class="empty">${rawData.length ? 'No rows in the selected panel(s).' : 'Upload data first.'}</div>`; return; }
   const { specimenIds, rows } = buildStabilityMatrix();
   if (!specimenIds.length){ holder.innerHTML = '<div class="empty">No rows matched stability timepoint filters.</div>'; return; }
 
@@ -2472,6 +2568,167 @@ document.getElementById('exportXlsxBtn').addEventListener('click', () => {
 
 STUDY_DEFS.forEach(d => ensureStudyTabDom(d.key));
 renderStudySummary();
+
+/* ---------------------------------------------------------------------
+   SESSION: AUTO-SAVE (IndexedDB) + SESSION FILE (.json)
+--------------------------------------------------------------------- */
+const SESSION_DB = 'qpcrAnalyzerSession', SESSION_STORE = 'kv', SESSION_KEY = 'current';
+let _restoring = false, _saveTimer = null, _idbOk = true;
+
+function idb(){
+  return new Promise((resolve, reject) => {
+    let req;
+    try { req = indexedDB.open(SESSION_DB, 1); } catch(e){ reject(e); return; }
+    req.onupgradeneeded = () => req.result.createObjectStore(SESSION_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbGet(key){
+  return idb().then(db => new Promise((res, rej) => {
+    const r = db.transaction(SESSION_STORE).objectStore(SESSION_STORE).get(key);
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  }));
+}
+function idbSet(key, val){
+  return idb().then(db => new Promise((res, rej) => {
+    const tx = db.transaction(SESSION_STORE, 'readwrite');
+    tx.objectStore(SESSION_STORE).put(val, key);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  }));
+}
+function idbDel(key){
+  return idb().then(db => new Promise((res, rej) => {
+    const tx = db.transaction(SESSION_STORE, 'readwrite');
+    tx.objectStore(SESSION_STORE).delete(key);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  }));
+}
+
+function captureState(){
+  const inputs = {};
+  document.querySelectorAll('input[id],select[id]').forEach(el => {
+    if (el.type === 'file') return;
+    inputs[el.id] = (el.type === 'checkbox') ? el.checked : el.value;
+  });
+  const activeBtn = document.querySelector('.rail button.nav-item.active');
+  const keywords = {};
+  STUDY_DEFS.forEach(d => keywords[d.key] = d.keyword);
+  return {
+    app: 'qpcr-validation-analyzer', v: 1, savedAt: new Date().toISOString(),
+    rows: rawData.map(r => ({sample:r.sample, target:r.target, cqRaw:r.cqRaw, cqNum:r.cqNum, panel:r.panel, file:r.file, day:r.day})),
+    loadedFiles, excludedPanels: Array.from(excludedPanels),
+    cutoff, eliminateEarly, earlyCt, sensMaxReps, keywords, inputs,
+    activeTab: activeBtn ? activeBtn.getAttribute('data-tab') : 'data'
+  };
+}
+
+function setSessionStatus(msg){
+  const el = document.getElementById('sessionStatus'); if (el) el.textContent = msg;
+}
+
+function scheduleSave(){
+  if (_restoring) return;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async () => {
+    try {
+      const st = captureState();
+      await idbSet(SESSION_KEY, st);
+      _idbOk = true;
+      setSessionStatus(`Auto-saved ${new Date(st.savedAt).toLocaleTimeString()} · ${st.rows.length} rows, ${Object.keys(st.loadedFiles).length} file(s).`);
+    } catch(e){
+      _idbOk = false;
+      setSessionStatus('Auto-save unavailable in this browser. Use "Save session file" to keep your work.');
+    }
+  }, 400);
+}
+
+function applyState(st){
+  if (!st || !Array.isArray(st.rows)) throw new Error('Not a valid session file.');
+  _restoring = true;
+  try {
+    rawData = st.rows.map(r => ({
+      sample: r.sample, target: r.target, cqRaw: r.cqRaw, cqNum: r.cqNum, panel: r.panel || derivePanel(r.sample),
+      file: r.file, day: r.day,
+      _sampleNorm: normalize(r.sample),
+      _search: normalize(r.sample + ' ' + r.day + ' ' + r.file)
+    }));
+    loadedFiles = st.loadedFiles || {};
+    excludedPanels = new Set(st.excludedPanels || []);
+    if (isFinite(st.cutoff)) cutoff = st.cutoff;
+    eliminateEarly = st.eliminateEarly !== false;
+    if (isFinite(st.earlyCt)) earlyCt = st.earlyCt;
+    if (isFinite(st.sensMaxReps)) sensMaxReps = st.sensMaxReps;
+    STUDY_DEFS.forEach(d => { if (st.keywords && typeof st.keywords[d.key] === 'string') d.keyword = st.keywords[d.key]; });
+    STUDY_DEFS.forEach(d => ensureStudyTabDom(d.key));
+    Object.entries(st.inputs || {}).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (!el || el.type === 'file') return;
+      if (el.type === 'checkbox') el.checked = !!val; else el.value = val;
+    });
+    document.getElementById('cutoffInput').value = cutoff;
+    document.getElementById('eliminateEarlyToggle').checked = eliminateEarly;
+    document.getElementById('earlyCtInput').value = earlyCt;
+    renderStudySummary();
+    afterDataLoaded();
+    const btn = document.querySelector(`.rail button.nav-item[data-tab="${st.activeTab || 'data'}"]`);
+    if (btn) btn.click();
+  } finally {
+    _restoring = false;
+  }
+}
+
+async function restoreSession(){
+  try {
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+    const st = await idbGet(SESSION_KEY);
+    if (st && st.rows && st.rows.length){
+      applyState(st);
+      setSessionStatus(`Restored previous session (saved ${new Date(st.savedAt).toLocaleString()}) · ${st.rows.length} rows, ${Object.keys(st.loadedFiles||{}).length} file(s).`);
+    }
+  } catch(e){
+    _idbOk = false;
+    setSessionStatus('Auto-save unavailable in this browser. Use "Save session file" to keep your work.');
+  }
+}
+
+document.getElementById('saveSessionBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(captureState())], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `qpcr-session-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+document.getElementById('loadSessionBtn').addEventListener('click', () => document.getElementById('sessionFileInput').click());
+document.getElementById('sessionFileInput').addEventListener('change', e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  if (rawData.length && !confirm('Replace the current session with this file?')) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try { applyState(JSON.parse(reader.result)); scheduleSave(); setSessionStatus(`Loaded session file ${f.name}.`); }
+    catch(err){ alert('Cannot open session file: ' + err.message); }
+  };
+  reader.readAsText(f);
+});
+document.getElementById('resetSessionBtn').addEventListener('click', async () => {
+  if (!confirm('Delete the auto-saved session and clear all data, settings and filters? This reloads the page.')) return;
+  try { await idbDel(SESSION_KEY); } catch(e){}
+  location.reload();
+});
+
+// any control change or tab switch triggers a save
+document.addEventListener('input', scheduleSave);
+document.addEventListener('change', scheduleSave);
+document.querySelectorAll('.rail button.nav-item').forEach(b => b.addEventListener('click', scheduleSave));
+window.addEventListener('pagehide', () => { if (!_restoring && !_saveTimer) return; try { idbSet(SESSION_KEY, captureState()); } catch(e){} });
+
+restoreSession();
+document.getElementById('panelChips').addEventListener('click', e => {
+  const b = e.target.closest('.pchip'); if (!b) return;
+  onPanelChipClick(b.getAttribute('data-panel'), e.ctrlKey || e.metaKey);
+});
 </script>
 </body>
 </html>

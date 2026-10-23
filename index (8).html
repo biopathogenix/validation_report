@@ -1,0 +1,2748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Validation Summary Report Builder</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --ink:#132436;
+    --ink-soft:#3c5163;
+    --paper:#f5f7f8;
+    --panel:#ffffff;
+    --line:#d8dfe3;
+    --teal:#0e7c86;
+    --teal-dark:#0a5b63;
+    --teal-tint:#e4f1f2;
+    --amber:#b8722a;
+    --red:#a3352f;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+    --sans: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:var(--sans);
+    background:var(--paper);
+    color:var(--ink);
+    font-size:14px;
+    line-height:1.45;
+  }
+  .app{display:grid;grid-template-columns:230px 1fr;min-height:100vh;}
+  .rail{
+    background:var(--ink);
+    color:#cfe1e6;
+    padding:20px 0;
+    position:sticky;top:0;height:100vh;overflow-y:auto;
+  }
+  .rail-brand{padding:0 18px 16px 18px;border-bottom:1px solid #274154;margin-bottom:10px;}
+  .rail-brand .t1{font-size:13px;letter-spacing:.02em;color:#8fb4bd;font-weight:600;}
+  .rail-brand .t2{font-size:16px;font-weight:700;color:#fff;margin-top:2px;}
+  .rail-group-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#5f7c8a;padding:14px 18px 6px;}
+  .rail button.nav-item{
+    display:block;width:100%;text-align:left;background:none;border:none;
+    color:#c6d8dd;padding:9px 18px;font-size:13.5px;cursor:pointer;
+    border-left:3px solid transparent;font-family:var(--sans);
+  }
+  .rail button.nav-item:hover{background:#1b3446;color:#fff;}
+  .rail button.nav-item.active{background:#1b3446;color:#fff;border-left-color:var(--teal);font-weight:600;}
+  .rail button.nav-item .cnt{float:right;color:#6f8b97;font-family:var(--mono);font-size:11.5px;}
+  main{padding:28px 36px 60px;max-width:1340px;}
+  h1{font-size:21px;margin:0 0 4px;}
+  h2{font-size:17px;margin:0 0 14px;}
+  .sub{color:var(--ink-soft);font-size:13px;margin-bottom:22px;}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:20px 22px;margin-bottom:18px;}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;}
+  .btn{
+    background:var(--teal);color:#fff;border:none;padding:8px 14px;border-radius:4px;
+    font-size:13px;cursor:pointer;font-family:var(--sans);font-weight:600;
+  }
+  .btn:hover{background:var(--teal-dark);}
+  .btn.secondary{background:#fff;color:var(--teal-dark);border:1px solid var(--teal);}
+  .btn.secondary:hover{background:var(--teal-tint);}
+  .btn.ghost{background:none;color:var(--ink-soft);border:1px solid var(--line);}
+  .btn.ghost:hover{border-color:var(--ink-soft);color:var(--ink);}
+  .btn.small{padding:4px 9px;font-size:12px;}
+  .btn.danger{background:none;color:var(--red);border:1px solid #e3b3b0;}
+  .btn.danger:hover{background:#fbeceb;}
+  input[type=text], input[type=number], select{
+    font-family:var(--sans);font-size:13px;padding:6px 8px;border:1px solid var(--line);
+    border-radius:4px;background:#fff;color:var(--ink);
+  }
+  label{font-size:12px;color:var(--ink-soft);font-weight:600;}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;}
+  th,td{padding:6px 9px;border-bottom:1px solid var(--line);text-align:left;}
+  th{background:#eef2f3;color:var(--ink-soft);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;}
+  td.num, th.num{text-align:right;font-family:var(--mono);}
+  tr.pos td.call{color:var(--teal-dark);font-weight:600;}
+  tr.neg td.call{color:#8a97a0;}
+  .empty{color:#8a97a0;font-style:italic;padding:16px;font-size:13px;}
+  .badge{display:inline-block;background:var(--teal-tint);color:var(--teal-dark);border-radius:3px;padding:1px 7px;font-size:11px;font-weight:600;}
+  .flex-between{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  .hint{font-size:12px;color:var(--ink-soft);}
+  .dropzone{
+    border:2px dashed var(--line);border-radius:6px;padding:28px;text-align:center;
+    color:var(--ink-soft);cursor:pointer;background:#fafcfc;
+  }
+  .dropzone.drag{border-color:var(--teal);background:var(--teal-tint);}
+  .kpi-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;}
+  .kpi{border:1px solid var(--line);border-radius:6px;padding:10px 16px;min-width:120px;}
+  .kpi .n{font-size:20px;font-weight:700;font-family:var(--mono);}
+  .kpi .l{font-size:11.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em;}
+  #panelFilterBar{align-items:center;gap:12px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px;margin-bottom:14px;}
+  #panelFilterBar .plabel{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);}
+  #panelChips{display:flex;gap:6px;flex-wrap:wrap;}
+  .pchip{border:1px solid var(--line);background:#fff;color:var(--ink-soft);border-radius:14px;padding:3px 11px;font-size:12.5px;cursor:pointer;font-family:inherit;}
+  .pchip .pn{font-family:var(--mono);font-size:10.5px;opacity:.7;margin-left:3px;}
+  .pchip.on{background:var(--teal-dark,#0f6b6b);border-color:var(--teal-dark,#0f6b6b);color:#fff;}
+  .tag-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+  .tag{background:#eef2f3;border-radius:3px;padding:2px 7px;font-size:11.5px;font-family:var(--mono);color:var(--ink-soft);}
+
+  .switch-wrap{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:12px;color:var(--ink);}
+  .switch{position:relative;display:inline-block;width:34px;height:18px;}
+  .switch input{opacity:0;width:0;height:0;}
+  .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background-color:#ccc;transition:.3s;border-radius:18px;}
+  .slider:before{position:absolute;content:"";height:12px;width:12px;left:3px;bottom:3px;background-color:white;transition:.3s;border-radius:50%;}
+  input:checked + .slider{background-color:var(--teal);}
+  input:checked + .slider:before{transform:translateX(16px);}
+
+  .matrix-table-wrap{
+    overflow-x:auto;
+    border:1px solid var(--line);
+    border-radius:6px;
+    background:#ffffff;
+  }
+  table.matrix-table{
+    border-collapse:separate;
+    border-spacing:0;
+    width:100%;
+    font-size:12px;
+  }
+  table.matrix-table th,
+  table.matrix-table td{
+    padding:6px 9px;
+    white-space:nowrap;
+    border-bottom:1px solid #e1e7ea;
+    border-right:1px solid #edf1f3;
+  }
+  table.matrix-table thead tr:first-child th{
+    font-size:11.5px;
+    font-weight:700;
+    background:#eef3f5;
+    color:var(--ink);
+    border-bottom:1px solid #d4dde2;
+  }
+  table.matrix-table thead tr:nth-child(2) th{
+    font-size:11px;
+    font-weight:600;
+    color:var(--ink-soft);
+    background:#f8fafb;
+    border-bottom:2px solid #cfd9de;
+  }
+  table.matrix-table th.col-target,
+  table.matrix-table td.col-target{
+    position:sticky;
+    left:0;
+    z-index:2;
+    font-weight:600;
+    text-align:left;
+    background:#ffffff;
+    border-right:2px solid #d8dfe3;
+    min-width:180px;
+  }
+  table.matrix-table thead th.col-target{
+    background:#eef3f5;
+    z-index:3;
+  }
+  table.matrix-table td.rep-cell{
+    text-align:right;
+    font-family:var(--mono);
+    font-size:11.5px;
+  }
+  table.matrix-table td.rep-cell.pos{
+    background:#eef7f8;
+    color:var(--teal-dark);
+    font-weight:600;
+  }
+  table.matrix-table td.rep-cell.neg{
+    color:#95a3ab;
+    background:#ffffff;
+  }
+  table.matrix-table .col-divider{
+    width:16px;
+    min-width:16px;
+    max-width:16px;
+    padding:0;
+    background:#eef2f4;
+    border-left:1px solid #d8dfe3;
+    border-right:1px solid #d8dfe3;
+  }
+
+  table.matrix-table thead th.concluded-head{
+    background:#1c5560;
+    color:#ffffff;
+    font-weight:700;
+    font-size:11.5px;
+    text-align:center;
+    letter-spacing:.03em;
+    border-right:1px solid #286976;
+    border-bottom:1px solid #144049;
+  }
+  table.matrix-table thead th.concluded-subhead{
+    background:#2b6f7c;
+    color:#ffffff;
+    font-weight:700;
+    font-size:11px;
+    text-align:right;
+    letter-spacing:.02em;
+    border-right:1px solid #378290;
+    border-bottom:2px solid #194e57;
+  }
+  table.matrix-table thead th.concluded-target{
+    background:#22606c;
+    color:#ffffff;
+    font-weight:700;
+    font-size:11px;
+    text-align:left;
+    letter-spacing:.02em;
+    border-right:2px solid #144049;
+    border-bottom:2px solid #194e57;
+  }
+  table.matrix-table thead th.stat-head{
+    background:#b0b8bc;
+    color:#ffffff;
+    font-weight:700;
+    font-size:11px;
+    text-align:right;
+    letter-spacing:.02em;
+    border-right:1px solid #c2c9cc;
+  }
+  table.matrix-table td.stat-cell{
+    text-align:right;
+    font-family:var(--mono);
+    font-size:11.5px;
+    background:#fafdff;
+  }
+  table.matrix-table td.concluded-target-cell{
+    font-weight:600;
+    background:#f4f8f9;
+    border-right:2px solid #d8dfe3;
+    text-align:left;
+  }
+  table.matrix-table td.stat-highlight{
+    font-weight:700;
+    color:var(--teal-dark);
+    background:#f2f8f7;
+  }
+  table.matrix-table td.stat-rsq{
+    font-weight:700;
+    color:#0a5b63;
+    background:#edf7f5;
+    text-align:right;
+    font-family:var(--mono);
+  }
+
+  @media print{
+    .rail, .no-print{display:none !important;}
+    main{padding:0;max-width:none;}
+    .app{display:block;}
+    .panel{border:none;padding:0;margin-bottom:26px;page-break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <nav class="rail">
+    <div class="rail-brand">
+      <div class="t1">RUO · qPCR Assay QA</div>
+      <div class="t2">Validation Summary Builder</div>
+    </div>
+    <div class="rail-group-label">Setup</div>
+    <button class="nav-item active" data-tab="data">1 · Import data <span class="cnt" id="cnt-data">0</span></button>
+    <button class="nav-item" data-tab="config">2 · Global settings</button>
+    <div class="rail-group-label">Study tabs</div>
+    <button class="nav-item" data-tab="correlation">Correlation Study</button>
+    <button class="nav-item" data-tab="sensitivity">Sensitivity Study</button>
+    <button class="nav-item" data-tab="intra">Intra-Study</button>
+    <button class="nav-item" data-tab="inter">Inter-Study</button>
+    <button class="nav-item" data-tab="linearity">Linearity Study</button>
+    <button class="nav-item" data-tab="interference">Interference Study</button>
+    <button class="nav-item" data-tab="stability">Stability Study</button>
+    <div class="rail-group-label">Output</div>
+    <button class="nav-item" data-tab="report">Report &amp; export</button>
+  </nav>
+
+  <main>
+    <div id="panelFilterBar" class="no-print" style="display:none;">
+      <span class="plabel">Panel filter</span>
+      <div id="panelChips"></div>
+      <span id="panelSummary" class="hint"></span>
+      <span class="hint" style="margin-left:auto;">Click = only that panel &middot; Ctrl/Cmd-click = add/remove</span>
+    </div>
+    <section id="tab-data" class="tabpane">
+      <h1>Import assay data</h1>
+      <div class="sub">Upload CSV or QuantStudio / EDS Excel exports (.xlsx). Merges runs automatically without replacing existing data.</div>
+      <div class="panel">
+        <div class="dropzone" id="dropzone">
+          <div><strong>Drop CSV or Excel files here</strong>, or click to choose files.</div>
+          <div class="hint" style="margin-top:6px;">Expected columns: <span class="badge">Target</span> <span class="badge">Sample</span> <span class="badge">Cq</span></div>
+          <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" multiple style="display:none;">
+        </div>
+        <div class="kpi-row" id="dataKpis" style="display:none;">
+          <div class="kpi"><div class="n" id="kpiRows">0</div><div class="l">Rows loaded</div></div>
+          <div class="kpi"><div class="n" id="kpiSamples">0</div><div class="l">Unique samples</div></div>
+          <div class="kpi"><div class="n" id="kpiTargets">0</div><div class="l">Unique targets</div></div>
+          <div class="kpi"><div class="n" id="kpiFiles">0</div><div class="l">Files loaded</div></div>
+        </div>
+        <div id="prefixTags" class="tag-list"></div>
+      </div>
+      <div class="panel no-print" id="sessionPanel">
+        <div class="flex-between">
+          <div>
+            <h2 style="margin-bottom:2px;">Session</h2>
+            <div class="hint" id="sessionStatus">Auto-save is on: data, settings, filters and the open tab are kept in this browser.</div>
+          </div>
+          <div class="row">
+            <button class="btn secondary small" id="saveSessionBtn">Save session file</button>
+            <button class="btn secondary small" id="loadSessionBtn">Open session file</button>
+            <button class="btn ghost small" id="resetSessionBtn">Start fresh</button>
+            <input type="file" id="sessionFileInput" accept=".json,application/json" style="display:none;">
+          </div>
+        </div>
+      </div>
+      <div class="panel" id="availabilityPanel" style="display:none;">
+        <h2 style="margin-bottom:6px;">Study data availability</h2>
+        <div class="hint" style="margin-bottom:10px;">Based on sample IDs in the imported data (not file names). Availability does not mean the study passed validation.</div>
+        <div id="availabilityResults"></div>
+      </div>
+      <div class="panel" id="sanityPanel" style="display:none;">
+        <h2 style="margin-bottom:8px;">Data sanity checks</h2>
+        <div class="hint" style="margin-bottom:10px;">Warnings do not change uploaded measurements or study calculations.</div>
+        <div id="sanityResults"></div>
+      </div>
+      <div class="panel" id="fileTrackerPanel" style="display:none;">
+        <h2 style="margin-bottom:10px;">Loaded files</h2>
+        <table><thead><tr><th>File</th><th>Day / run label</th><th class="num">Rows</th><th></th></tr></thead><tbody id="fileTrackerBody"></tbody></table>
+      </div>
+      <div class="panel" id="previewPanel" style="display:none;">
+        <div class="flex-between"><h2 style="margin-bottom:8px;">Preview (first 60 rows of active panels)</h2><button class="btn ghost small no-print" id="clearDataBtn">Clear all data</button></div>
+        <div style="max-height:420px;overflow-y:auto;">
+          <table><thead><tr><th>Sample</th><th>Panel</th><th>Target</th><th class="num">Cq</th><th>Day/File</th></tr></thead><tbody id="previewBody"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-config" class="tabpane" style="display:none;">
+      <h1>Global settings</h1>
+      <div class="sub">Applies across all study tabs, tables, and exported files.</div>
+      <div class="panel">
+        <div class="row">
+          <div>
+            <label>Upper Cq Cutoff (Threshold)</label><br>
+            <input type="number" id="cutoffInput" value="34" step="0.1" style="width:100px;">
+          </div>
+          <div style="border-left: 1px solid var(--line); padding-left: 14px;">
+            <label class="switch-wrap">
+              <span class="switch">
+                <input type="checkbox" id="eliminateEarlyToggle" checked>
+                <span class="slider"></span>
+              </span>
+              Eliminate early Ct values
+            </label><br>
+            <div style="margin-top: 4px;">
+              <span class="hint">Lower limit: </span>
+              <input type="number" id="earlyCtInput" value="13" step="0.5" style="width:75px;">
+            </div>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:10px;max-width:680px;">
+          Values <b>&gt; upper threshold</b> or <b>&lt; lower threshold</b> (when early elimination is active) are evaluated and displayed as <b>UNDETERMINED</b> across all tables and Excel exports.
+        </div>
+      </div>
+      <div class="panel">
+        <div class="flex-between" style="margin-bottom:8px;">
+          <div>
+            <h2 style="margin-bottom:2px;">Study filter keywords</h2>
+            <div class="hint">Override the default keyword with your own sample prefix or tag. Changes sync directly to that study's active filter and re-render calculations.</div>
+          </div>
+          <button class="btn secondary small no-print" id="resetAllKeywordsBtn">Reset all to defaults</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Study</th>
+              <th>Default keyword</th>
+              <th>Custom sample keyword</th>
+              <th style="width:80px;"></th>
+            </tr>
+          </thead>
+          <tbody id="studySummaryBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div id="studyTabsRoot"></div>
+
+    <section id="tab-report" class="tabpane" style="display:none;">
+      <h1>Report &amp; export</h1>
+      <div class="sub">Clean study matrices mirroring the original validation workbooks.</div>
+      <div class="panel no-print">
+        <div class="row">
+          <button class="btn" id="exportXlsxBtn">Download Excel workbook (.xlsx)</button>
+          <button class="btn secondary" id="printReportBtn">Print / save report as PDF</button>
+        </div>
+      </div>
+      <div id="reportBody"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+let rawData = [];
+let loadedFiles = {};
+
+const STUDY_DEFS = [
+  {key:'correlation',  sheet:'Correlation Study',  defaultKeyword:'Accuracy',     keyword:'Accuracy'    },
+  {key:'sensitivity',  sheet:'Sensitivity Study',  defaultKeyword:'LOD',          keyword:'LOD'         },
+  {key:'intra',        sheet:'Intra-Study',        defaultKeyword:'Intra',        keyword:'Intra'       },
+  {key:'inter',        sheet:'Inter-Study',        defaultKeyword:'Inter',        keyword:'Inter'       },
+  {key:'linearity',    sheet:'Linearity Study',    defaultKeyword:'Lin',          keyword:'Lin'         },
+  {key:'interference', sheet:'Interference Study', defaultKeyword:'Interference', keyword:'Interference'},
+  {key:'stability',    sheet:'Stability Study',    defaultKeyword:'Stability',    keyword:'Stability'   },
+];
+
+let cutoff = 34;
+let eliminateEarly = true;
+let earlyCt = 13;
+let sensMaxReps = 20;
+
+function isCqPositive(cq){
+  if (cq === null || cq === undefined || !isFinite(cq)) return false;
+  if (eliminateEarly && cq < earlyCt) return false;
+  return cq <= cutoff;
+}
+
+function getSanitizedCq(cell){
+  if (!cell || cell.cqNum === null) return { text: 'UNDETERMINED', val: null };
+  const n = cell.cqNum;
+  if (n > cutoff) return { text: 'UNDETERMINED', val: null };
+  if (eliminateEarly && n < earlyCt) return { text: 'UNDETERMINED', val: null };
+  return { text: n.toFixed(3), val: Number(n.toFixed(3)) };
+}
+
+function parseCq(raw){
+  if (raw === undefined || raw === null) return null;
+  const s = String(raw).trim();
+  if (s === '') return null;
+  const up = s.toUpperCase();
+  if (up.includes('UNDETERMINED') || up === 'N/A' || up === 'NA' || up === 'NO CT') return null;
+  const n = parseFloat(s);
+  return isFinite(n) ? n : null;
+}
+
+function normalize(s){
+  return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+}
+
+function guessDayLabel(filename){
+  const m = filename.match(/day[_\s]?0*(\d+)/i);
+  return m ? `Day ${m[1]}` : filename.replace(/\.(csv|xlsx|xls)$/i,'');
+}
+
+function loadFile(file){
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'xlsx' || ext === 'xls') loadXlsxFile(file);
+  else loadCsvFile(file);
+}
+
+function processParsedRows(fileName, rawRows){
+  const columns = rawRows.length ? Object.keys(rawRows[0]).map(k => normalize(k)) : [];
+  if (!['sample','target','cq'].every(k => columns.includes(k))){
+    alert(`Cannot import ${fileName}: required columns are Sample, Target, and Cq.`);
+    return;
+  }
+  const day = guessDayLabel(fileName);
+  const panelKey = Object.keys(rawRows[0]||{}).find(k => ['panel','panelname','assayname'].includes(normalize(k)));
+  const parsed = rawRows.map(r => {
+    const sample = (r.Sample || r.sample || r.SAMPLE || '').toString().trim();
+    const target = (r.Target || r.target || r.TARGET || '').toString().trim();
+    const cqRaw = (r.Cq !== undefined) ? r.Cq : (r.cq !== undefined ? r.cq : (r.CQ !== undefined ? r.CQ : ''));
+    const cqRawStr = (cqRaw === undefined || cqRaw === null) ? '' : String(cqRaw).trim();
+    const colPanel = panelKey ? String(r[panelKey] === undefined || r[panelKey] === null ? '' : r[panelKey]).trim() : '';
+    return {
+      sample, target, cqRaw: cqRawStr, cqNum: parseCq(cqRaw),
+      panel: colPanel || derivePanel(sample),
+      file: fileName, day,
+      _sampleNorm: normalize(sample),
+      _search: normalize(sample + ' ' + day + ' ' + fileName)
+    };
+  }).filter(r => r.sample !== '' || r.target !== '');
+
+  rawData = rawData.filter(r => r.file !== fileName).concat(parsed);
+  loadedFiles[fileName] = { day, rowCount: parsed.length };
+  afterDataLoaded();
+}
+
+function loadCsvFile(file){
+  Papa.parse(file, {
+    header: true, skipEmptyLines: true,
+    complete: function(res){ if (res.errors.length) console.warn("CSV parse warnings", res.errors); processParsedRows(file.name, res.data); },
+    error: function(err){ alert(`Cannot read ${file.name}: ${err.message || err}`); }
+  });
+}
+
+function loadXlsxFile(file){
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const data = new Uint8Array(e.target.result);
+    const wb = XLSX.read(data, {type: 'array'});
+    let targetSheet = wb.SheetNames.find(s => normalize(s) === 'cqresults' || normalize(s) === 'results') || wb.SheetNames[0];
+    const ws = wb.Sheets[targetSheet];
+    const rows = XLSX.utils.sheet_to_json(ws, {defval: ''});
+    processParsedRows(file.name, rows);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+
+/* ---------------- Panel filter ---------------- */
+const NO_PANEL = '(no panel)';
+let excludedPanels = new Set();
+let _activeCache = {src:null, len:-1, sig:'', rows:[]};
+const PANEL_STOPWORDS = ['accuracy','correlation','lod','intra','inter','lin','interference','stability','day','pc','nc','ntc','pos','neg'];
+
+// Panel = text before the first "_" in the sample ID (e.g. ABR_IntraNC_01 -> ABR),
+// unless that text is just a study/control keyword (e.g. Intra_PC_01).
+function derivePanel(sample){
+  const m = String(sample||'').match(/^([A-Za-z0-9]+)[_]/);
+  if (!m) return NO_PANEL;
+  const n = normalize(m[1]);
+  if (PANEL_STOPWORDS.some(w => n === w || n.startsWith(w) && /^\d*$/.test(n.slice(w.length)))) return NO_PANEL;
+  return m[1].toUpperCase();
+}
+
+function allPanels(){
+  const counts = new Map();
+  rawData.forEach(r => counts.set(r.panel || NO_PANEL, (counts.get(r.panel || NO_PANEL)||0) + 1));
+  return Array.from(counts.entries()).sort((a,b) => naturalSort(a[0], b[0]));
+}
+
+function getActiveData(){
+  const sig = Array.from(excludedPanels).sort().join('|');
+  if (_activeCache.src === rawData && _activeCache.len === rawData.length && _activeCache.sig === sig) return _activeCache.rows;
+  const rows = excludedPanels.size ? rawData.filter(r => !excludedPanels.has(r.panel || NO_PANEL)) : rawData;
+  _activeCache = {src: rawData, len: rawData.length, sig, rows};
+  return rows;
+}
+
+function renderPanelFilter(){
+  const bar = document.getElementById('panelFilterBar');
+  const chips = document.getElementById('panelChips');
+  if (!bar || !chips) return;
+  const panels = allPanels();
+  // drop exclusions for panels that no longer exist
+  excludedPanels.forEach(p => { if (!panels.some(x => x[0] === p)) excludedPanels.delete(p); });
+  const real = panels.filter(p => p[0] !== NO_PANEL);
+  bar.style.display = (rawData.length && real.length) ? 'flex' : 'none';
+  if (!real.length) return;
+  const allOn = excludedPanels.size === 0;
+  chips.innerHTML =
+    `<button class="pchip ${allOn?'on':''}" data-panel="__all__">All panels</button>` +
+    panels.map(([p,n]) => `<button class="pchip ${excludedPanels.has(p)?'':'on'}" data-panel="${escapeHtml(p)}">${escapeHtml(p)} <span class="pn">${n}</span></button>`).join('');
+  const act = getActiveData();
+  document.getElementById('panelSummary').textContent = allOn ? '' : `${act.length} of ${rawData.length} rows included`;
+}
+
+function onPanelChipClick(panel, multi){
+  const panels = allPanels().map(p => p[0]);
+  if (panel === '__all__'){
+    excludedPanels = new Set();
+  } else if (multi){
+    // ctrl/cmd-click: toggle this panel in the current selection
+    if (excludedPanels.has(panel)) excludedPanels.delete(panel); else excludedPanels.add(panel);
+    if (excludedPanels.size === panels.length) excludedPanels = new Set();
+  } else {
+    // plain click: show only this panel
+    excludedPanels = new Set(panels.filter(p => p !== panel));
+  }
+  afterDataLoaded();
+}
+
+function afterDataLoaded(){
+  renderPanelFilter();
+  renderDataKpis();
+  renderFileTracker();
+  renderPreview();
+  renderSanityChecks();
+  renderStudyAvailability();
+  renderStudySummary();
+  STUDY_DEFS.forEach(d => ensureStudyTabDom(d.key));
+  renderAllStudies();
+  document.getElementById('cnt-data').textContent = rawData.length;
+  refreshDatalists();
+  scheduleSave();
+}
+
+function renderAllStudies(){
+  renderCorrelationMatrix();
+  renderSensitivityMatrix();
+  renderPrecisionMatrix('intra');
+  renderPrecisionMatrix('inter');
+  renderLinearityMatrix();
+  renderInterferenceMatrix();
+  renderStabilityMatrix();
+}
+
+function uniquePrefixes(){
+  const set = new Set();
+  rawData.forEach(r => { const p = r.sample.split(/\s+/)[0]; if (p) set.add(p); });
+  return Array.from(set).sort();
+}
+
+function uniqueTargets(){
+  const set = new Set();
+  rawData.forEach(r => { if (r.target) set.add(r.target); });
+  return Array.from(set).sort();
+}
+
+function renderDataKpis(){
+  document.getElementById('dataKpis').style.display = rawData.length ? 'flex' : 'none';
+  document.getElementById('kpiRows').textContent = rawData.length;
+  document.getElementById('kpiSamples').textContent = new Set(rawData.map(r=>r.sample)).size;
+  document.getElementById('kpiTargets').textContent = uniqueTargets().length;
+  document.getElementById('kpiFiles').textContent = Object.keys(loadedFiles).length;
+  const prefixes = uniquePrefixes();
+  document.getElementById('prefixTags').innerHTML = prefixes.map(p=>`<span class="tag">${escapeHtml(p)}</span>`).join('');
+}
+
+function renderFileTracker(){
+  const panel = document.getElementById('fileTrackerPanel');
+  const body = document.getElementById('fileTrackerBody');
+  const names = Object.keys(loadedFiles);
+  panel.style.display = names.length ? 'block' : 'none';
+  body.innerHTML = names.map(name => `
+    <tr data-file="${escapeHtml(name)}">
+      <td>${escapeHtml(name)}</td>
+      <td><input type="text" class="f-day" value="${escapeHtml(loadedFiles[name].day)}" style="width:140px;"></td>
+      <td class="num">${loadedFiles[name].rowCount}</td>
+      <td><button class="btn danger small" data-action="removefile" data-file="${escapeHtml(name)}">Remove</button></td>
+    </tr>
+  `).join('');
+  body.querySelectorAll('.f-day').forEach(input => {
+    input.addEventListener('input', e => {
+      const name = e.target.closest('tr').getAttribute('data-file');
+      const newDay = e.target.value;
+      loadedFiles[name].day = newDay;
+      rawData.forEach(r => { if (r.file === name){ r.day = newDay; r._search = normalize(r.sample + ' ' + newDay + ' ' + r.file); } });
+      afterDataLoaded();
+    });
+  });
+}
+
+function removeFile(name){
+  rawData = rawData.filter(r => r.file !== name);
+  delete loadedFiles[name];
+  afterDataLoaded();
+}
+
+function renderPreview(){
+  const body = document.getElementById('previewBody');
+  const panel = document.getElementById('previewPanel');
+  if (!rawData.length){ panel.style.display='none'; return; }
+  panel.style.display='block';
+  body.innerHTML = getActiveData().slice(0,60).map(r => {
+    const s = getSanitizedCq(r);
+    return `<tr><td>${escapeHtml(r.sample)}</td><td>${escapeHtml(r.panel||'')}</td><td>${escapeHtml(r.target)}</td><td class="num">${escapeHtml(s.text)}</td><td>${escapeHtml(r.day||'')}</td></tr>`;
+  }).join('');
+}
+
+function renderStudyAvailability(){
+  const panel = document.getElementById('availabilityPanel');
+  const out = document.getElementById('availabilityResults');
+  if (!panel || !out) return;
+  panel.style.display = getActiveData().length ? 'block' : 'none';
+  if (!getActiveData().length) return;
+
+  // All availability filters use sample IDs ONLY, never file/day names.
+  const match = word => word && getActiveData().filter(r => r._sampleNorm && r._sampleNorm.includes(normalize(word)));
+  const metric = arr => ({rows: arr.length, samples: new Set(arr.map(r=>r.sample)).size});
+  const checks = [];
+  function add(label, arr, detail, eligible){
+    const m = metric(arr);
+    checks.push({label, ...m, detail, eligible: eligible === undefined ? m.samples > 0 : eligible});
+  }
+  const accuracyKey = getCorrelationFilter().trim();
+  const lodKey = getSensitivityFilter().trim();
+  add('Correlation Study', match(accuracyKey) || [], 'Sample keyword: ' + (accuracyKey || '(blank)'), Boolean(accuracyKey));
+  add('Sensitivity Study (LOD)', match(lodKey) || [], 'Sample keyword: ' + (lodKey || '(blank)'), Boolean(lodKey));
+
+  ['intra','inter'].forEach(key => {
+    const filters = getPrecisionFilters(key);
+    const pc = match(filters.pc) || [];
+    const nc = match(filters.nc) || [];
+    const combined = [...pc, ...nc];
+    add(key === 'intra' ? 'Intra-Study' : 'Inter-Study', combined,
+      'Positive control: ' + metric(pc).samples + ' sample(s); negative control: ' + metric(nc).samples + ' sample(s)',
+      Boolean(pc.length && nc.length));
+  });
+
+  const linKey = getLinearityFilter().trim();
+  const lin = match(linKey) || [];
+  const tiers = typeof LINEARITY_TIERS === 'undefined' ? [] : LINEARITY_TIERS.filter(t => lin.some(r => matchLinearityCopies(r.sample, t.copies)));
+  add('Linearity Study',lin, `${tiers.length} distinct copy level(s) found; at least 2 required for regression`, tiers.length >= 2);
+
+  const infFilters = getInterferenceFilters();
+  const base = match(infFilters.baseline) || [];
+  const interfering = match(infFilters.interference) || [];
+  const spiked = r => r._sampleNorm.includes('int') || r._sampleNorm.includes('interfer') || r._sampleNorm.includes('spike') || r.sample.includes('+');
+  const infArm = interfering.filter(spiked);
+  const baselineArm = base.filter(r => !spiked(r));
+  const basePairs = new Set(baselineArm.map(r => r.target+'||'+extractSpecimenId(r.sample)));
+  const paired = infArm.filter(r => basePairs.has(r.target+'||'+extractSpecimenId(r.sample)));
+  add('Interference Study',[...baselineArm,...infArm], `${paired.length} paired target/specimen measurement(s) found`, paired.length > 0);
+
+  const stab = getStabilityFilters();
+  const stabBase = match(stab.day1) || [];
+  const stabArms = [stab.day3,stab.day5,stab.day7,stab.elution3].map(k=>match(k)||[]);
+  const stabBasePairs = new Set(stabBase.map(r=>r.target+'||'+extractSpecimenId(r.sample)));
+  const stabMatchedArms = stabArms.reduce((n, rows) => n + rows.filter(r=>stabBasePairs.has(r.target+'||'+extractSpecimenId(r.sample))).length,0);
+  add('Stability Study',[...stabBase,...stabArms.flat()], `${stabMatchedArms} matched baseline/time-point measurement(s) found`, stabMatchedArms > 0);
+
+  out.innerHTML = `<div class="matrix-table-wrap"><table><thead><tr><th>Study</th><th>Status</th><th class="num">Rows</th><th class="num">Unique samples</th><th>Check details</th></tr></thead><tbody>`
+    + checks.map(c => `<tr><td>${escapeHtml(c.label)}</td><td style="font-weight:600;color:${c.eligible && c.samples ? 'var(--teal-dark)' : 'var(--amber)'};">${c.eligible && c.samples ? 'Data found' : (c.samples ? 'Incomplete' : 'No matching data')}</td><td class="num">${c.rows}</td><td class="num">${c.samples}</td><td>${escapeHtml(c.detail)}</td></tr>`).join('')
+    + '</tbody></table></div>';
+}
+
+function renderSanityChecks(){
+  const panel = document.getElementById('sanityPanel');
+  const results = document.getElementById('sanityResults');
+  if (!panel || !results) return;
+  panel.style.display = getActiveData().length ? 'block' : 'none';
+  if (!getActiveData().length) return;
+
+  const warnings = [];
+  const count = (predicate) => getActiveData().filter(predicate).length;
+  const missingSample = count(r => !r.sample);
+  const missingTarget = count(r => !r.target);
+  if (missingSample) warnings.push(`${missingSample} rows have no sample ID.`);
+  if (missingTarget) warnings.push(`${missingTarget} rows have no target name.`);
+  const invalidCq = count(r => r.cqRaw && r.cqNum === null && !/^(undetermined|n\/?a|no ct)$/i.test(r.cqRaw));
+  if (invalidCq) warnings.push(`${invalidCq} rows contain non-numeric or unrecognized Cq values; check the source.`);
+  const outOfRange = count(r => r.cqNum !== null && !isCqPositive(r.cqNum));
+  if (outOfRange) warnings.push(`${outOfRange} Cq values are outside the current accepted Cq limits and display as UNDETERMINED.`);
+  const duplicateKeys = new Map();
+  getActiveData().forEach(r => {
+    if (!r.sample || !r.target) return;
+    const key = JSON.stringify([r.file, r.sample, r.target]);
+    duplicateKeys.set(key, (duplicateKeys.get(key)||0) + 1);
+  });
+  const duplicateRows = [...duplicateKeys.values()].reduce((n,v) => n+Math.max(0,v-1),0);
+  if (duplicateRows) warnings.push(`${duplicateRows} repeated file/sample/target records may overwrite each other in matrix views.`);
+  const checks = [
+    ['Correlation Study', normalize(getCorrelationFilter()), 'Accuracy'],
+    ['Sensitivity Study', normalize(getSensitivityFilter()), 'LOD']
+  ];
+  checks.forEach(([title, keyword, defaultName]) => {
+    const matching = keyword ? getActiveData().filter(r => r._sampleNorm.includes(keyword)) : [];
+    const unique = new Set(matching.map(r => r.sample)).size;
+    if (!keyword) warnings.push(`${title}: empty filter. Enter a sample keyword (e.g., ${defaultName}).`);
+    else if (!unique) warnings.push(`${title}: no sample IDs match "${keyword}". This study will remain empty; other study data will not be substituted.`);
+  });
+  results.innerHTML = warnings.length
+    ? `<div style="font-weight:600;color:var(--amber);margin-bottom:8px;">${warnings.length} check(s) need review</div>` +
+      `<ul style="margin:0;padding-left:20px;">${warnings.map(w => `<li style="margin:4px 0;">${escapeHtml(w)}</li>`).join('')}</ul>`
+    : '<div style="font-weight:600;color:var(--teal-dark);">Checks passed: no obvious data issues detected.</div>';
+}
+
+function sampleFilterMatches(row, filterTextNorm){
+  if (!filterTextNorm) return true;
+  if (row._sampleNorm && row._sampleNorm.includes(filterTextNorm)) return true;
+  if (filterTextNorm === 'inter' && row._search.includes('interference')) return false;
+  return row._search.includes(filterTextNorm);
+}
+
+function fmt(v, digits){
+  if (v === null || v === undefined || !isFinite(v)) return '—';
+  return v.toFixed(digits === undefined ? 3 : digits);
+}
+
+function naturalSort(a,b){ return a.localeCompare(b, undefined, {numeric:true, sensitivity:'base'}); }
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function computePrecisionRow(cells){
+  const nums = cells.map(c => getSanitizedCq(c).val).filter(v => v !== null);
+  if (!nums.length) return { mean: null, sd: null, cv: null };
+  const mean = nums.reduce((a,b)=>a+b,0)/nums.length;
+  if (nums.length < 2) return { mean, sd: 0, cv: 0 };
+  const variance = nums.reduce((a,b)=>a+Math.pow(b-mean,2),0)/nums.length;
+  const sd = Math.sqrt(variance);
+  const cv = mean ? (sd/mean)*100 : null;
+  return { mean, sd, cv };
+}
+
+function rsqCalc(xList, yList){
+  const n = xList.length;
+  if (n < 2) return null;
+  const meanX = xList.reduce((a,b)=>a+b,0)/n;
+  const meanY = yList.reduce((a,b)=>a+b,0)/n;
+  let cov = 0, varX = 0, varY = 0;
+  for (let i = 0; i < n; i++){
+    const dx = xList[i] - meanX;
+    const dy = yList[i] - meanY;
+    cov += dx * dy;
+    varX += dx * dx;
+    varY += dy * dy;
+  }
+  if (varX === 0 || varY === 0) return 0;
+  return (cov * cov) / (varX * varY);
+}
+
+function colToLetter(n) {
+  let result = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    result = String.fromCharCode(65 + rem) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
+}
+
+function fCell(formulaStr, numVal, fmtStr) {
+  const cell = {};
+  if (formulaStr) {
+    cell.f = formulaStr.replace(/^=/, '');
+  }
+  if (numVal !== null && numVal !== undefined && isFinite(numVal)) {
+    cell.t = 'n';
+    cell.v = Number(Number(numVal).toFixed(4));
+  } else if (numVal !== undefined && numVal !== null && numVal !== '') {
+    cell.t = 's';
+    cell.v = String(numVal);
+  } else if (!formulaStr) {
+    cell.t = 's';
+    cell.v = '';
+  }
+  if (fmtStr) cell.z = fmtStr;
+  return cell;
+}
+
+function studyDef(key){ return STUDY_DEFS.find(d => d.key === key); }
+
+function syncKeywordToStudy(key){
+  const def = studyDef(key);
+  if (!def) return;
+  const kw = def.keyword;
+
+  if (key === 'correlation'){
+    const el = document.getElementById('corrFilter');
+    if (el) el.value = kw;
+    renderCorrelationMatrix();
+  } else if (key === 'sensitivity'){
+    const el = document.getElementById('sensFilter');
+    if (el) el.value = kw;
+    renderSensitivityMatrix();
+  } else if (key === 'intra' || key === 'inter'){
+    const pcEl = document.getElementById(key + 'PcFilter');
+    const ncEl = document.getElementById(key + 'NcFilter');
+    if (pcEl) pcEl.value = kw + 'PC';
+    if (ncEl) ncEl.value = kw + 'NC';
+    renderPrecisionMatrix(key);
+  } else if (key === 'linearity'){
+    const el = document.getElementById('linFilter');
+    if (el) el.value = kw;
+    renderLinearityMatrix();
+  } else if (key === 'interference'){
+    const el = document.getElementById('infInterferenceFilter');
+    if (el) el.value = kw;
+    renderInterferenceMatrix();
+  } else if (key === 'stability'){
+    renderStabilityMatrix();
+  }
+}
+
+function renderStudySummary(){
+  const body = document.getElementById('studySummaryBody');
+  if (!body) return;
+  body.innerHTML = STUDY_DEFS.map(d => `
+    <tr data-study="${d.key}">
+      <td style="font-weight:600;">${escapeHtml(d.sheet)}</td>
+      <td><span class="badge">${escapeHtml(d.defaultKeyword)}</span></td>
+      <td>
+        <input type="text" class="custom-kw-input" data-study="${d.key}" value="${escapeHtml(d.keyword)}" placeholder="${escapeHtml(d.defaultKeyword)}" list="dl-samples" style="width:200px;">
+      </td>
+      <td>
+        <button class="btn ghost small" data-action="reset-kw" data-study="${d.key}">Reset</button>
+      </td>
+    </tr>
+  `).join('');
+
+  body.querySelectorAll('.custom-kw-input').forEach(input => {
+    input.addEventListener('input', e => {
+      const k = e.target.getAttribute('data-study');
+      const def = studyDef(k);
+      if (def){
+        def.keyword = e.target.value.trim() || def.defaultKeyword;
+        syncKeywordToStudy(k);
+      }
+    });
+  });
+
+  body.querySelectorAll('[data-action="reset-kw"]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const k = e.target.getAttribute('data-study');
+      const def = studyDef(k);
+      if (def){
+        def.keyword = def.defaultKeyword;
+        renderStudySummary();
+        syncKeywordToStudy(k);
+      }
+    });
+  });
+}
+
+document.getElementById('resetAllKeywordsBtn')?.addEventListener('click', () => {
+  STUDY_DEFS.forEach(d => {
+    d.keyword = d.defaultKeyword;
+    syncKeywordToStudy(d.key);
+  });
+  renderStudySummary();
+});
+
+function ensureStudyTabDom(key){
+  if (document.getElementById('tab-'+key)) return;
+  const def = studyDef(key);
+  const root = document.getElementById('studyTabsRoot');
+  const sec = document.createElement('section');
+  sec.id = 'tab-'+key;
+  sec.className = 'tabpane';
+  sec.style.display = 'none';
+
+  let matrixBlock = '';
+  if (key === 'correlation'){
+    matrixBlock = `
+    <div class="panel">
+      <div class="flex-between no-print">
+        <h2 style="margin-bottom:2px;">Correlation / Accuracy Matrix Report</h2>
+        <div class="row">
+          <label>Sample filter</label>
+          <input type="text" id="corrFilter" value="${escapeHtml(def.keyword)}" list="dl-samples" style="width:160px;">
+          <button class="btn secondary small" id="corrRefreshBtn">Refresh</button>
+          <button class="btn small" id="corrExportBtn">Download matrix (.xlsx)</button>
+        </div>
+      </div>
+      <div id="corrMatrixHolder" style="overflow-x:auto;"></div>
+    </div>`;
+  } else if (key === 'sensitivity'){
+    matrixBlock = `
+    <div class="panel">
+      <div class="flex-between no-print">
+        <h2 style="margin-bottom:2px;">Sensitivity Study (LOD) Report</h2>
+        <div class="row">
+          <label>Sample filter</label>
+          <input type="text" id="sensFilter" value="${escapeHtml(def.keyword)}" list="dl-samples" style="width:150px;">
+          <label>Replicates</label>
+          <select id="sensRepsSelect" style="width:85px;">
+            <option value="20" selected>20</option>
+            <option value="40">40</option>
+            <option value="60">60</option>
+            <option value="0">All</option>
+          </select>
+          <button class="btn secondary small" id="sensRefreshBtn">Refresh</button>
+          <button class="btn small" id="sensExportBtn">Download matrix (.xlsx)</button>
+        </div>
+      </div>
+      <div class="hint no-print" style="margin:8px 0 14px;">Replicates with Mean, SD, %CV precision metrics side-by-side with Concordance (out of 20) and Agreement% summaries.</div>
+      <div id="sensMatrixHolder"></div>
+    </div>`;
+  } else if (key === 'intra' || key === 'inter'){
+    const title = key === 'intra' ? 'Intra-Study precision matrix' : 'Inter-Study precision matrix';
+    matrixBlock = `
+    <div class="panel">
+      <div class="flex-between no-print">
+        <h2 style="margin-bottom:2px;">${title}</h2>
+        <div class="row">
+          <label>Positive control (PC)</label>
+          <input type="text" id="${key}PcFilter" value="${def.keyword + 'PC'}" list="dl-samples" style="width:130px;">
+          <label>Negative control (NC)</label>
+          <input type="text" id="${key}NcFilter" value="${def.keyword + 'NC'}" list="dl-samples" style="width:130px;">
+          <button class="btn secondary small" id="${key}RefreshBtn">Refresh</button>
+          <button class="btn small" id="${key}ExportBtn">Download matrix (.xlsx)</button>
+        </div>
+      </div>
+      <div id="${key}MatrixHolder"></div>
+    </div>`;
+  } else if (key === 'linearity'){
+    matrixBlock = `
+    <div class="panel">
+      <div class="flex-between no-print">
+        <h2 style="margin-bottom:2px;">Linearity Study matrix report</h2>
+        <div class="row">
+          <label>Sample filter</label>
+          <input type="text" id="linFilter" value="${escapeHtml(def.keyword)}" list="dl-samples" style="width:140px;">
+          <button class="btn secondary small" id="linRefreshBtn">Refresh</button>
+          <button class="btn small" id="linExportBtn">Download matrix (.xlsx)</button>
+        </div>
+      </div>
+      <div id="linMatrixHolder"></div>
+    </div>`;
+  } else if (key === 'interference'){
+    matrixBlock = `
+    <div class="panel">
+      <div class="flex-between no-print">
+        <h2 style="margin-bottom:2px;">Interference Matrix Report</h2>
+        <div class="row">
+          <label>Baseline (Neat) filter</label>
+          <input type="text" id="infBaselineFilter" value="Accuracy" list="dl-samples" style="width:140px;">
+          <label>Specimen # from</label>
+          <input type="number" id="infSpecFrom" value="16" min="0" step="1" style="width:70px;">
+          <label>to</label>
+          <input type="number" id="infSpecTo" value="20" min="0" step="1" style="width:70px;">
+          <label>With-interferent filter</label>
+          <input type="text" id="infInterferenceFilter" value="${escapeHtml(def.keyword)}" list="dl-samples" style="width:140px;">
+          <button class="btn secondary small" id="infRefreshBtn">Refresh</button>
+          <button class="btn small" id="infExportBtn">Download matrix (.xlsx)</button>
+        </div>
+      </div>
+      <div id="infMatrixHolder" style="overflow-x:auto;"></div>
+    </div>`;
+  } else if (key === 'stability'){
+    matrixBlock = `
+    <div class="panel">
+      <div class="flex-between no-print">
+        <h2 style="margin-bottom:2px;">Stability matrix report</h2>
+        <div class="row">
+          <button class="btn secondary small" id="stabRefreshBtn">Refresh</button>
+          <button class="btn small" id="stabExportBtn">Download matrix (.xlsx)</button>
+        </div>
+      </div>
+      <div class="row no-print" style="margin-bottom:14px;">
+        <div><label>Day 1</label><br><input type="text" id="stabDay1Filter" value="Accuracy" list="dl-samples" style="width:130px;"></div>
+        <div><label>Day 3</label><br><input type="text" id="stabDay3Filter" value="Stability_Day03" list="dl-samples" style="width:150px;"></div>
+        <div><label>Day 5</label><br><input type="text" id="stabDay5Filter" value="Stability_Day05" list="dl-samples" style="width:150px;"></div>
+        <div><label>Day 7</label><br><input type="text" id="stabDay7Filter" value="Day_7" list="dl-samples" style="width:150px;"></div>
+        <div><label>Elution Day 3</label><br><input type="text" id="stabElution3Filter" value="Elution_Day03" list="dl-samples" style="width:150px;"></div>
+      </div>
+      <div id="stabMatrixHolder" style="overflow-x:auto;"></div>
+    </div>`;
+  }
+
+  sec.innerHTML = `<h1>${def.sheet}</h1>${matrixBlock}`;
+  root.appendChild(sec);
+
+  if (key === 'correlation'){
+    document.getElementById('corrRefreshBtn').addEventListener('click', renderCorrelationMatrix);
+    document.getElementById('corrFilter').addEventListener('input', e => {
+      def.keyword = e.target.value.trim();
+      renderStudySummary();
+      renderCorrelationMatrix();
+    });
+    document.getElementById('corrExportBtn').addEventListener('click', exportCorrelationMatrixXlsx);
+  }
+  if (key === 'sensitivity'){
+    document.getElementById('sensRefreshBtn').addEventListener('click', renderSensitivityMatrix);
+    document.getElementById('sensFilter').addEventListener('input', e => {
+      def.keyword = e.target.value.trim();
+      renderStudySummary();
+      renderSensitivityMatrix();
+    });
+    document.getElementById('sensRepsSelect').addEventListener('change', e => {
+      sensMaxReps = parseInt(e.target.value, 10);
+      renderSensitivityMatrix();
+    });
+    document.getElementById('sensExportBtn').addEventListener('click', exportSensitivityMatrixXlsx);
+  }
+  if (key === 'intra' || key === 'inter'){
+    document.getElementById(key+'RefreshBtn').addEventListener('click', () => renderPrecisionMatrix(key));
+    document.getElementById(key+'PcFilter').addEventListener('input', () => renderPrecisionMatrix(key));
+    document.getElementById(key+'NcFilter').addEventListener('input', () => renderPrecisionMatrix(key));
+    document.getElementById(key+'ExportBtn').addEventListener('click', () => exportPrecisionMatrixXlsx(key));
+  }
+  if (key === 'linearity'){
+    document.getElementById('linRefreshBtn').addEventListener('click', renderLinearityMatrix);
+    document.getElementById('linFilter').addEventListener('input', e => {
+      def.keyword = e.target.value.trim();
+      renderStudySummary();
+      renderLinearityMatrix();
+    });
+    document.getElementById('linExportBtn').addEventListener('click', exportLinearityMatrixXlsx);
+  }
+  if (key === 'interference'){
+    document.getElementById('infRefreshBtn').addEventListener('click', renderInterferenceMatrix);
+    document.getElementById('infBaselineFilter').addEventListener('input', renderInterferenceMatrix);
+    document.getElementById('infSpecFrom').addEventListener('input', renderInterferenceMatrix);
+    document.getElementById('infSpecTo').addEventListener('input', renderInterferenceMatrix);
+    document.getElementById('infInterferenceFilter').addEventListener('input', e => {
+      def.keyword = e.target.value.trim();
+      renderStudySummary();
+      renderInterferenceMatrix();
+    });
+    document.getElementById('infExportBtn').addEventListener('click', exportInterferenceMatrixXlsx);
+  }
+  if (key === 'stability'){
+    document.getElementById('stabRefreshBtn').addEventListener('click', renderStabilityMatrix);
+    ['stabDay1Filter','stabDay3Filter','stabDay5Filter','stabDay7Filter','stabElution3Filter'].forEach(id => {
+      document.getElementById(id).addEventListener('input', renderStabilityMatrix);
+    });
+    document.getElementById('stabExportBtn').addEventListener('click', exportStabilityMatrixXlsx);
+  }
+}
+
+/* ---------------------------------------------------------------------
+   1. CORRELATION / ACCURACY STUDY
+--------------------------------------------------------------------- */
+function getCorrelationFilter(){
+  const el = document.getElementById('corrFilter');
+  return el ? el.value : studyDef('correlation').keyword;
+}
+
+function buildCorrelationMatrix(){
+  const filterTextNorm = normalize(getCorrelationFilter());
+  // Restrict correlation to matching sample IDs, without falling back to other studies.
+  const pool = filterTextNorm
+    ? getActiveData().filter(r => r._sampleNorm && r._sampleNorm.includes(filterTextNorm))
+    : [];
+
+  const samples = Array.from(new Set(pool.map(r=>r.sample))).sort(naturalSort);
+  const targets = Array.from(new Set(pool.map(r=>r.target))).sort(naturalSort);
+  const lookup = {};
+  pool.forEach(r => { lookup[r.target+'|||'+r.sample] = r; });
+
+  const rows = targets.map(t => {
+    const cells = samples.map(s => lookup[t+'|||'+s] || null);
+    const posCount = cells.filter(c => c && isCqPositive(c.cqNum)).length;
+    const total = cells.length;
+    // Negative = measured but not positive (undetermined / outside Cq limits). Missing wells are not counted.
+    const negCount = cells.filter(c => c && !isCqPositive(c.cqNum)).length;
+    const concordant = posCount + negCount;   // e.g. 14/20 positive + 6/20 negative = 20/20 concordant
+    const agreement = total ? (concordant/total)*100 : null;
+    return { target:t, cells, posCount, negCount, concordant, total, agreement };
+  });
+
+  return { samples, targets, rows };
+}
+
+function renderCorrelationMatrix(){
+  const holder = document.getElementById('corrMatrixHolder');
+  if (!holder) return;
+  if (!getActiveData().length){ holder.innerHTML = `<div class="empty">${rawData.length ? 'No rows in the selected panel(s).' : 'Upload data first.'}</div>`; return; }
+  const { samples, rows } = buildCorrelationMatrix();
+  renderSanityChecks();
+  if (!samples.length){ holder.innerHTML = '<div class="empty">No samples match this filter.</div>'; return; }
+
+  let html = `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
+    <th class="col-target" rowspan="2">Target Name</th>
+    <th colspan="${samples.length}" style="text-align:center;">Replicates / Samples (${samples.length})</th>
+    <th class="col-divider" rowspan="2"></th>
+    <th class="concluded-head" colspan="5" style="text-align:center;">Concluded Agreement Summary</th>
+  </tr><tr>`;
+
+  samples.forEach(s => html += `<th>${escapeHtml(s)}</th>`);
+  html += `<th class="concluded-target">Target Name</th>
+           <th class="concluded-subhead">Positive</th>
+           <th class="concluded-subhead">Negative</th>
+           <th class="concluded-subhead">Concordant</th>
+           <th class="concluded-subhead">Agreement%</th></tr></thead><tbody>`;
+
+  rows.forEach(r => {
+    html += `<tr><td class="col-target">${escapeHtml(r.target)}</td>`;
+    r.cells.forEach(c => {
+      const s = getSanitizedCq(c);
+      const cls = c && isCqPositive(c.cqNum) ? 'pos' : (c ? 'neg' : '');
+      html += `<td class="rep-cell ${cls}">${escapeHtml(s.text)}</td>`;
+    });
+    html += `<td class="col-divider"></td>
+             <td class="concluded-target-cell">${escapeHtml(r.target)}</td>
+             <td class="stat-cell">${r.posCount}/${r.total}</td>
+             <td class="stat-cell">${r.negCount}/${r.total}</td>
+             <td class="stat-cell">${r.concordant}/${r.total}</td>
+             <td class="stat-cell stat-highlight">${fmt(r.agreement,0)}%</td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  holder.innerHTML = html;
+}
+
+function exportCorrelationMatrixXlsx(){
+  const { samples, rows } = buildCorrelationMatrix();
+  const row1 = ['Target Name', ...samples.map(s => s), '', 'Target Name', 'Count of positive', 'Count of negative', 'Concordant', 'Agreement'];
+  const row2 = ['Target Name', ...samples.map(() => 'Measured'), '', '', '', '', '', ''];
+  const aoa = [row1, row2];
+
+  rows.forEach((r, idx) => {
+    const excelRow = idx + 3;
+    const targetF = `IF(A${excelRow}="", "", A${excelRow})`;
+    aoa.push([
+      r.target,
+      ...r.cells.map(c => {
+        const s = getSanitizedCq(c);
+        return s.val !== null ? s.val : s.text;
+      }),
+      '',
+      fCell(targetF, r.target),
+      `${r.posCount}/${r.total}`,
+      `${r.negCount}/${r.total}`,
+      `${r.concordant}/${r.total}`,
+      `${fmt(r.agreement,0)}%`
+    ]);
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Correlation Study');
+  XLSX.writeFile(wb, 'Correlation_Study_Matrix.xlsx');
+}
+
+/* ---------------------------------------------------------------------
+   2. SENSITIVITY STUDY (LOD)
+--------------------------------------------------------------------- */
+function getSensitivityFilter(){
+  const el = document.getElementById('sensFilter');
+  return el ? el.value.trim() : 'LOD';
+}
+
+function buildSensitivityMatrix(){
+  const filterTextNorm = normalize(getSensitivityFilter());
+  // Restrict sensitivity to matching sample IDs, without falling back to other studies.
+  const pool = filterTextNorm
+    ? getActiveData().filter(r => r._sampleNorm && r._sampleNorm.includes(filterTextNorm))
+    : [];
+
+  let samples = Array.from(new Set(pool.map(r => r.sample))).sort(naturalSort);
+  if (sensMaxReps && sensMaxReps > 0 && samples.length > sensMaxReps) {
+    samples = samples.slice(0, sensMaxReps);
+  }
+
+  const targets = Array.from(new Set(pool.map(r => r.target))).sort(naturalSort);
+  const lookup = {};
+  pool.forEach(r => { lookup[r.target + '|||' + r.sample] = r; });
+
+  const rows = targets.map(t => {
+    const cells = samples.map(s => lookup[t + '|||' + s] || null);
+    const stats = computePrecisionRow(cells);
+    const posCount = cells.filter(c => c && isCqPositive(c.cqNum)).length;
+    const total = cells.length;
+    const agreement = total ? (posCount / total) * 100 : null;
+    return { target: t, cells, stats, posCount, total, agreement };
+  });
+
+  return { samples, targets, rows };
+}
+
+function renderSensitivityMatrix(){
+  const holder = document.getElementById('sensMatrixHolder');
+  if (!holder) return;
+  if (!getActiveData().length){ holder.innerHTML = `<div class="empty">${rawData.length ? 'No rows in the selected panel(s).' : 'Upload data first.'}</div>`; return; }
+  const { samples, rows } = buildSensitivityMatrix();
+  renderSanityChecks();
+  if (!samples.length){ holder.innerHTML = '<div class="empty">No samples match this sensitivity / LOD filter.</div>'; return; }
+
+  let html = `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
+    <th class="col-target" rowspan="2">Target Name</th>
+    <th colspan="${samples.length}" style="text-align:center;">Replicate (${samples.length})</th>
+    <th class="stat-head" colspan="3" style="text-align:center;">Statistics</th>
+    <th class="col-divider" rowspan="2"></th>
+    <th class="concluded-head" colspan="6" style="text-align:center;">Concluded Summary &amp; Concordance</th>
+  </tr><tr>`;
+
+  samples.forEach((_, idx) => html += `<th>${idx + 1}</th>`);
+  html += `<th class="stat-head">Mean</th><th class="stat-head">SD</th><th class="stat-head">%CV</th>`;
+  html += `<th class="concluded-target">Target Name</th>`;
+  html += `<th class="concluded-subhead">Count of concordant</th><th class="concluded-subhead">Agreement%</th>`;
+  html += `<th class="concluded-subhead">Mean</th><th class="concluded-subhead">SD</th><th class="concluded-subhead">%CV</th></tr></thead><tbody>`;
+
+  rows.forEach(r => {
+    html += `<tr><td class="col-target">${escapeHtml(r.target)}</td>`;
+
+    r.cells.forEach(c => {
+      const s = getSanitizedCq(c);
+      const isPos = c && isCqPositive(c.cqNum);
+      const cls = isPos ? 'pos' : (c ? 'neg' : '');
+      html += `<td class="rep-cell ${cls}">${escapeHtml(s.text)}</td>`;
+    });
+
+    html += `<td class="stat-cell">${fmt(r.stats.mean, 3)}</td>
+      <td class="stat-cell">${fmt(r.stats.sd, 4)}</td>
+      <td class="stat-cell stat-highlight">${fmt(r.stats.cv, 2)}%</td>`;
+
+    html += `<td class="col-divider"></td>`;
+
+    html += `<td class="concluded-target-cell">${escapeHtml(r.target)}</td>
+      <td class="stat-cell">${r.posCount}/${r.total}</td>
+      <td class="stat-cell stat-highlight">${fmt(r.agreement, 0)}%</td>
+      <td class="stat-cell">${fmt(r.stats.mean, 3)}</td>
+      <td class="stat-cell">${fmt(r.stats.sd, 4)}</td>
+      <td class="stat-cell stat-highlight">${fmt(r.stats.cv, 2)}%</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  holder.innerHTML = html;
+}
+
+function exportSensitivityMatrixXlsx(){
+  const { samples, rows } = buildSensitivityMatrix();
+  const N = Math.max(1, samples.length);
+
+  const row1 = ['Sensitivity Study (LOD) '];
+  const row2 = ['', 'Replicate'];
+  for (let i = 1; i < N; i++) row2.push('');
+
+  const row3 = ['Target Name'];
+  samples.forEach((_, idx) => row3.push(idx + 1));
+  row3.push('Mean', 'SD', '%CV', '', 'Target Name', 'Count of concordant', 'Agreement%', 'Mean', 'SD', '%CV');
+  const aoa = [row1, row2, row3];
+
+  const startCol = 'B';
+  const endCol = colToLetter(1 + N);
+  const meanCol = colToLetter(1 + N + 1);
+  const sdCol = colToLetter(1 + N + 2);
+  const cvCol = colToLetter(1 + N + 3);
+
+  rows.forEach((r, idx) => {
+    const excelRow = idx + 4;
+    const meanF = `AVERAGE(${startCol}${excelRow}:${endCol}${excelRow})`;
+    const sdF = `STDEVP(${startCol}${excelRow}:${endCol}${excelRow})`;
+    const cvF = `(${sdCol}${excelRow}/${meanCol}${excelRow})*100`;
+
+    const targetF = `IF(A${excelRow}="", "", A${excelRow})`;
+    const concF = `(COUNT(${startCol}${excelRow}:${endCol}${excelRow}))&"/"&(${N})`;
+    const agreeF = `TEXT(COUNT(${startCol}${excelRow}:${endCol}${excelRow})/${N}, "0%")`;
+    const mirrorMeanF = `IF(${meanCol}${excelRow}="", "", ${meanCol}${excelRow})`;
+    const mirrorSdF = `IF(${sdCol}${excelRow}="", "", ${sdCol}${excelRow})`;
+    const mirrorCvF = `IF(${cvCol}${excelRow}="", "", ${cvCol}${excelRow})`;
+
+    const line = [
+      r.target,
+      ...r.cells.map(c => {
+        const s = getSanitizedCq(c);
+        return s.val !== null ? s.val : s.text;
+      }),
+      fCell(meanF, r.stats.mean, '0.000'),
+      fCell(sdF, r.stats.sd, '0.0000'),
+      fCell(cvF, r.stats.cv, '0.00%'),
+      '',
+      fCell(targetF, r.target),
+      fCell(concF, `${r.posCount}/${N}`),
+      fCell(agreeF, `${Math.round(r.agreement || 0)}%`),
+      fCell(mirrorMeanF, r.stats.mean, '0.000'),
+      fCell(mirrorSdF, r.stats.sd, '0.0000'),
+      fCell(mirrorCvF, r.stats.cv, '0.00%')
+    ];
+    aoa.push(line);
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Sensitivity Study');
+  XLSX.writeFile(wb, 'Sensitivity_Study_Matrix.xlsx');
+}
+
+/* ---------------------------------------------------------------------
+   3 & 4. INTRA-STUDY & INTER-STUDY PRECISION
+--------------------------------------------------------------------- */
+function getPrecisionFilters(key){
+  const pcEl = document.getElementById(key+'PcFilter');
+  const ncEl = document.getElementById(key+'NcFilter');
+  const def = studyDef(key);
+  return {
+    pc: pcEl ? pcEl.value : (def.keyword + 'PC'),
+    nc: ncEl ? ncEl.value : (def.keyword + 'NC')
+  };
+}
+
+function buildPrecisionMatrix(key){
+  const { pc, nc } = getPrecisionFilters(key);
+  const pcNorm = normalize(pc);
+  const ncNorm = normalize(nc);
+
+  let poolPc = pcNorm ? getActiveData().filter(r => sampleFilterMatches(r, pcNorm)) : [];
+  let poolNc = ncNorm ? getActiveData().filter(r => sampleFilterMatches(r, ncNorm)) : [];
+
+  if (!poolPc.length && !poolNc.length){
+    const general = normalize(studyDef(key).keyword);
+    poolPc = getActiveData().filter(r => sampleFilterMatches(r, general));
+  }
+
+  const pcSamples = Array.from(new Set(poolPc.map(r=>r.sample))).sort(naturalSort);
+  const ncSamples = Array.from(new Set(poolNc.map(r=>r.sample))).sort(naturalSort);
+  const targets = Array.from(new Set(poolPc.concat(poolNc).map(r=>r.target))).sort(naturalSort);
+
+  const pcLookup = {}, ncLookup = {};
+  poolPc.forEach(r => { pcLookup[r.target+'|||'+r.sample] = r; });
+  poolNc.forEach(r => { ncLookup[r.target+'|||'+r.sample] = r; });
+
+  const rows = targets.map(t => {
+    const pcCells = pcSamples.map(s => pcLookup[t+'|||'+s] || null);
+    const ncCells = ncSamples.map(s => ncLookup[t+'|||'+s] || null);
+    const stats = computePrecisionRow(pcCells);
+    return { target:t, pcCells, stats, ncCells };
+  });
+
+  return { pcSamples, ncSamples, targets, rows };
+}
+
+function renderPrecisionMatrix(key){
+  const holder = document.getElementById(key+'MatrixHolder');
+  if (!holder) return;
+  if (!getActiveData().length){ holder.innerHTML = `<div class="empty">${rawData.length ? 'No rows in the selected panel(s).' : 'Upload data first.'}</div>`; return; }
+  const { pcSamples, ncSamples, rows } = buildPrecisionMatrix(key);
+  if (!pcSamples.length && !ncSamples.length){
+    holder.innerHTML = `<div class="empty">No samples matched "${escapeHtml(getPrecisionFilters(key).pc)}" or "${escapeHtml(getPrecisionFilters(key).nc)}".</div>`;
+    return;
+  }
+
+  const titlePrefix = key === 'intra' ? 'Intra-Study' : 'Inter-Study';
+  let html = `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
+    <th class="col-target" rowspan="2">${titlePrefix} positive</th>
+    <th colspan="${Math.max(1, pcSamples.length)}" style="text-align:center;">Replicate</th>
+    <th class="stat-head" colspan="3" style="text-align:center;">Statistics</th>
+    <th class="col-divider" rowspan="2"></th>
+    <th class="concluded-head" style="text-align:center;">${titlePrefix} Negative</th>
+    <th colspan="${Math.max(1, ncSamples.length)}" class="concluded-head" style="text-align:center;">Replicate</th>
+  </tr><tr>`;
+
+  if (pcSamples.length) pcSamples.forEach((_, idx) => html += `<th>Rep ${idx+1}</th>`);
+  else html += `<th>No PC</th>`;
+  html += `<th class="stat-head">Mean</th><th class="stat-head">SD</th><th class="stat-head">%CV</th>`;
+  html += `<th class="concluded-target">Target Name</th>`;
+  if (ncSamples.length) ncSamples.forEach((_, idx) => html += `<th class="concluded-subhead">Rep ${idx+1}</th>`);
+  else html += `<th class="concluded-subhead">No NC</th>`;
+  html += `</tr></thead><tbody>`;
+
+  rows.forEach(r => {
+    html += `<tr><td class="col-target">${escapeHtml(r.target)}</td>`;
+    if (r.pcCells.length){
+      r.pcCells.forEach(c => {
+        const s = getSanitizedCq(c);
+        const isPos = c && isCqPositive(c.cqNum);
+        const cls = isPos ? 'pos' : (c ? 'neg' : '');
+        html += `<td class="rep-cell ${cls}">${escapeHtml(s.text)}</td>`;
+      });
+    } else {
+      html += `<td class="rep-cell neg">—</td>`;
+    }
+
+    html += `<td class="stat-cell">${fmt(r.stats.mean, 3)}</td>
+      <td class="stat-cell">${fmt(r.stats.sd, 4)}</td>
+      <td class="stat-cell stat-highlight">${fmt(r.stats.cv, 2)}%</td>`;
+
+    html += `<td class="col-divider"></td>`;
+    html += `<td class="concluded-target-cell">${escapeHtml(r.target)}</td>`;
+
+    if (r.ncCells.length){
+      r.ncCells.forEach(c => {
+        const s = getSanitizedCq(c);
+        const isPos = c && isCqPositive(c.cqNum);
+        const cls = isPos ? 'pos' : (c ? 'neg' : '');
+        html += `<td class="rep-cell ${cls}">${escapeHtml(s.text)}</td>`;
+      });
+    } else {
+      html += `<td class="rep-cell neg">—</td>`;
+    }
+    html += `</tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  holder.innerHTML = html;
+}
+
+function exportPrecisionMatrixXlsx(key){
+  const { pcSamples, ncSamples, rows } = buildPrecisionMatrix(key);
+  const titlePrefix = key === 'intra' ? 'Intra-Study' : 'Inter-Study';
+
+  const row1 = [`${titlePrefix} positive`, ...pcSamples.map(()=>'Replicate'), 'Mean', 'SD', '%CV', '', `${titlePrefix} Negative`, ...ncSamples.map(()=>'Replicate')];
+  const row2 = ['Target Name', ...pcSamples.map((_, i)=>`Rep ${i+1}`), 'Mean', 'SD', '%CV', '', 'Target Name', ...ncSamples.map((_, i)=>`Rep ${i+1}`)];
+  const aoa = [row1, row2];
+
+  const pcN = Math.max(1, pcSamples.length);
+  rows.forEach((r, idx) => {
+    const excelRow = idx + 3;
+    const startCol = 'B';
+    const endCol = colToLetter(1 + pcN);
+    const meanCol = colToLetter(1 + pcN + 1);
+    const sdCol = colToLetter(1 + pcN + 2);
+
+    const meanF = `AVERAGE(${startCol}${excelRow}:${endCol}${excelRow})`;
+    const sdF = `STDEVP(${startCol}${excelRow}:${endCol}${excelRow})`;
+    const cvF = `(${sdCol}${excelRow}/${meanCol}${excelRow})*100`;
+
+    const line = [
+      r.target,
+      ...r.pcCells.map(c => {
+        const s = getSanitizedCq(c);
+        return s.val !== null ? s.val : s.text;
+      }),
+      fCell(meanF, r.stats.mean, '0.000'),
+      fCell(sdF, r.stats.sd, '0.0000'),
+      fCell(cvF, r.stats.cv, '0.00%'),
+      '',
+      r.target,
+      ...r.ncCells.map(c => {
+        const s = getSanitizedCq(c);
+        return s.val !== null ? s.val : s.text;
+      })
+    ];
+    aoa.push(line);
+  });
+
+  const sheetName = key === 'intra' ? 'Intra-Study' : 'Inter-Study';
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), sheetName);
+  XLSX.writeFile(wb, `${sheetName}_Precision_Matrix.xlsx`);
+}
+
+/* ---------------------------------------------------------------------
+   5. LINEARITY STUDY
+--------------------------------------------------------------------- */
+const LINEARITY_TIERS = [
+  { label: '10,000 Copies', copies: 10000 },
+  { label: '1000 Copies',   copies: 1000  },
+  { label: '100 Copies',    copies: 100   },
+  { label: '50 Copies',     copies: 50    },
+  { label: '10 Copies',     copies: 10    }
+];
+
+function getLinearityFilter(){
+  const el = document.getElementById('linFilter');
+  return el ? el.value : studyDef('linearity').keyword;
+}
+
+function matchLinearityCopies(sampleStr, copies){
+  const s = sampleStr.replace(/,/g, '').toLowerCase();
+  if (copies === 10000){
+    return /(?:10\s*\^\s*4|10000|10k|\b1e4\b)/.test(s);
+  } else if (copies === 1000){
+    return /(?:10\s*\^\s*3|1000|1k|\b1e3\b)/.test(s) && !/10000/.test(s);
+  } else if (copies === 100){
+    return /(?:10\s*\^\s*2|100|\b1e2\b)/.test(s) && !/(?:1000|10000)/.test(s);
+  } else if (copies === 50){
+    return /(?:^|[^0-9])50(?:[^0-9]|$)/.test(s);
+  } else if (copies === 10){
+    if (/10\s*\^\s*[23456]/.test(s)) return false;
+    if (/(?:10000|1000|100)/.test(s)) return false;
+    return /(?:^|[^0-9])10(?:[^0-9]|$)/.test(s);
+  }
+  return false;
+}
+
+function buildLinearityMatrix(){
+  const generalFilter = normalize(getLinearityFilter());
+  let linPool = generalFilter ? getActiveData().filter(r => sampleFilterMatches(r, generalFilter)) : getActiveData().slice();
+  if (!linPool.length && generalFilter !== 'lin') {
+    linPool = getActiveData().filter(r => sampleFilterMatches(r, 'lin'));
+  }
+  if (!linPool.length) linPool = getActiveData().slice();
+
+  const tierData = LINEARITY_TIERS.map(tier => {
+    const pool = linPool.filter(r => matchLinearityCopies(r.sample, tier.copies));
+    const samples = Array.from(new Set(pool.map(r=>r.sample))).sort(naturalSort);
+    return { ...tier, samples, pool };
+  });
+
+  const allTargets = Array.from(new Set(linPool.map(r=>r.target))).sort(naturalSort);
+  const targets = allTargets.length ? allTargets : uniqueTargets();
+
+  const rows = targets.map(t => {
+    const tierMeans = [];
+    const tierCells = [];
+    const validPointsX = [];
+    const validPointsY = [];
+
+    tierData.forEach(tier => {
+      const cells = tier.samples.map(s => tier.pool.find(r => r.target === t && r.sample === s) || null);
+      tierCells.push({ tier, cells });
+
+      const rawNums = cells.map(c => (c && c.cqNum !== null ? c.cqNum : null)).filter(v => v !== null);
+      const mean = rawNums.length ? rawNums.reduce((a,b)=>a+b,0)/rawNums.length : null;
+      tierMeans.push(mean);
+
+      if (mean !== null) {
+        validPointsX.push(Math.log10(tier.copies));
+        validPointsY.push(mean);
+      }
+    });
+
+    const rsq = (validPointsX.length >= 2) ? rsqCalc(validPointsX, validPointsY) : null;
+    return { target: t, tierCells, tierMeans, rsq };
+  });
+
+  return { tierData, targets, rows };
+}
+
+function renderLinearityMatrix(){
+  const holder = document.getElementById('linMatrixHolder');
+  if (!holder) return;
+  if (!getActiveData().length){ holder.innerHTML = `<div class="empty">${rawData.length ? 'No rows in the selected panel(s).' : 'Upload data first.'}</div>`; return; }
+  const { tierData, rows } = buildLinearityMatrix();
+  if (!rows.length){ holder.innerHTML = '<div class="empty">No data matched the linearity criteria.</div>'; return; }
+
+  let html = `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
+    <th class="col-target" rowspan="2">Target Name</th>`;
+  tierData.forEach(td => html += `<th colspan="${Math.max(1, td.samples.length)}" style="text-align:center;">${escapeHtml(td.label)}</th>`);
+  html += `<th class="col-divider" rowspan="2"></th>
+           <th class="concluded-head" colspan="${tierData.length + 2}" style="text-align:center;">Concluded Linearity Regression</th>
+           </tr><tr>`;
+
+  tierData.forEach(td => {
+    if (td.samples.length) td.samples.forEach((_, idx) => html += `<th>Rep ${idx+1}</th>`);
+    else html += `<th>—</th>`;
+  });
+  html += `<th class="concluded-target">Target Name</th>`;
+  tierData.forEach(td => html += `<th class="concluded-subhead">${td.copies} c/mL</th>`);
+  html += `<th class="concluded-subhead" style="text-align:center;">R²</th></tr></thead><tbody>`;
+
+  rows.forEach(r => {
+    html += `<tr><td class="col-target">${escapeHtml(r.target)}</td>`;
+    r.tierCells.forEach(tc => {
+      if (tc.cells.length){
+        tc.cells.forEach(c => {
+          const s = getSanitizedCq(c);
+          const isPos = c && isCqPositive(c.cqNum);
+          const cls = isPos ? 'pos' : (c ? 'neg' : '');
+          html += `<td class="rep-cell ${cls}">${escapeHtml(s.text)}</td>`;
+        });
+      } else {
+        html += `<td class="rep-cell neg">—</td>`;
+      }
+    });
+    html += `<td class="col-divider"></td>
+             <td class="concluded-target-cell">${escapeHtml(r.target)}</td>`;
+    r.tierMeans.forEach(mean => html += `<td class="stat-cell">${fmt(mean, 3)}</td>`);
+    html += `<td class="stat-rsq">${fmt(r.rsq, 4)}</td></tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  holder.innerHTML = html;
+}
+
+function exportLinearityMatrixXlsx(){
+  const { tierData, rows } = buildLinearityMatrix();
+
+  const row1 = ['Linearity Study '];
+  let repColCount = 0;
+  tierData.forEach(td => repColCount += Math.max(1, td.samples.length));
+  for (let i = 1; i < repColCount; i++) row1.push('');
+  row1.push('');
+  row1.push('');
+  row1.push('Enter the copies number');
+
+  const row2 = ['Target Name'];
+  tierData.forEach(td => {
+    row2.push(td.label);
+    const span = Math.max(1, td.samples.length);
+    for (let i = 1; i < span; i++) row2.push('');
+  });
+  row2.push('');
+  row2.push('');
+  tierData.forEach(td => row2.push(td.copies));
+  row2.push('');
+
+  const row3 = [''];
+  tierData.forEach(td => {
+    const span = Math.max(1, td.samples.length);
+    for (let i = 1; i <= span; i++) row3.push(i);
+  });
+  row3.push('');
+  row3.push('Target Name');
+
+  const copyStartColIdx = repColCount + 4;
+  tierData.forEach((_, idx) => {
+    const colLet = colToLetter(copyStartColIdx + idx);
+    row3.push(fCell(`LOG10(${colLet}2)`, Math.log10(tierData[idx].copies), '0.0000'));
+  });
+  row3.push('R2');
+
+  const aoa = [row1, row2, row3];
+
+  const tierColRanges = [];
+  let curCol = 2;
+  tierData.forEach(td => {
+    const span = Math.max(1, td.samples.length);
+    tierColRanges.push({ start: colToLetter(curCol), end: colToLetter(curCol + span - 1) });
+    curCol += span;
+  });
+
+  const meanStartColIdx = copyStartColIdx;
+  const meanEndColIdx = meanStartColIdx + tierData.length - 1;
+  const meanStartColLet = colToLetter(meanStartColIdx);
+  const meanEndColLet = colToLetter(meanEndColIdx);
+
+  rows.forEach((r, idx) => {
+    const excelRow = idx + 4;
+    const targetF = `IF(A${excelRow}="", "", A${excelRow})`;
+    const line = [r.target];
+
+    r.tierCells.forEach(tc => {
+      if (tc.cells.length) {
+        tc.cells.forEach(c => {
+          const s = getSanitizedCq(c);
+          line.push(s.val !== null ? s.val : s.text);
+        });
+      } else {
+        line.push('UNDETERMINED');
+      }
+    });
+
+    line.push('');
+    line.push(fCell(targetF, r.target));
+
+    tierColRanges.forEach((rng, tIdx) => {
+      const avgF = `AVERAGE(${rng.start}${excelRow}:${rng.end}${excelRow})`;
+      line.push(fCell(avgF, r.tierMeans[tIdx], '0.000'));
+    });
+
+    const rsqF = `RSQ(${meanStartColLet}${excelRow}:${meanEndColLet}${excelRow}, $${meanStartColLet}$3:$${meanEndColLet}$3)`;
+    line.push(fCell(rsqF, r.rsq, '0.0000'));
+
+    aoa.push(line);
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Linearity Study');
+  XLSX.writeFile(wb, 'Linearity_Study_Matrix.xlsx');
+}
+
+/* ---------------------------------------------------------------------
+   6. INTERFERENCE STUDY
+--------------------------------------------------------------------- */
+function extractSpecimenId(sampleStr){
+  const m = sampleStr.match(/(\d+)(?!.*\d)/);
+  return m ? m[1] : null;
+}
+
+function getInterferenceFilters(){
+  const baseEl = document.getElementById('infBaselineFilter');
+  const infEl = document.getElementById('infInterferenceFilter');
+  return {
+    baseline: baseEl ? baseEl.value : 'Accuracy',
+    interference: infEl ? infEl.value : studyDef('interference').keyword
+  };
+}
+
+function buildInterferenceMatrix(){
+  const { baseline, interference } = getInterferenceFilters();
+  const interNorm = normalize(interference), baseNorm = normalize(baseline);
+
+  const isInterSpiked = r => {
+    const sn = r._sampleNorm || normalize(r.sample);
+    return sn.includes('int') || sn.includes('interfer') || sn.includes('spike') || r.sample.includes('+');
+  };
+
+  let poolInterference = getActiveData().filter(r => sampleFilterMatches(r, interNorm));
+  let poolBaseline = getActiveData().filter(r => sampleFilterMatches(r, baseNorm));
+
+  if (baseNorm === interNorm || !poolBaseline.length || poolBaseline.some(r => poolInterference.includes(r))) {
+    const combined = getActiveData().filter(r => sampleFilterMatches(r, interNorm) || sampleFilterMatches(r, baseNorm));
+    poolInterference = combined.filter(isInterSpiked);
+    poolBaseline = combined.filter(r => !isInterSpiked(r));
+  }
+
+  // Restrict to a specimen-number range (default 16-20 = last 5 accuracy samples)
+  const fromEl = document.getElementById('infSpecFrom'), toEl = document.getElementById('infSpecTo');
+  const specFrom = fromEl && fromEl.value !== '' ? Number(fromEl.value) : 16;
+  const specTo = toEl && toEl.value !== '' ? Number(toEl.value) : 20;
+  const inSpecRange = r => { const id = extractSpecimenId(r.sample); return id !== null && Number(id) >= specFrom && Number(id) <= specTo; };
+  poolInterference = poolInterference.filter(inSpecRange);
+  poolBaseline = poolBaseline.filter(inSpecRange);
+
+  const specimenIds = Array.from(new Set(poolInterference.concat(poolBaseline).map(r => extractSpecimenId(r.sample)).filter(Boolean)))
+    .sort((a,b) => Number(a) - Number(b));
+  const targets = Array.from(new Set(poolInterference.concat(poolBaseline).map(r => r.target))).sort(naturalSort);
+
+  const lookupInterference = {}, lookupBaseline = {};
+  poolInterference.forEach(r => { const id = extractSpecimenId(r.sample); if (id) lookupInterference[r.target+'|||'+id] = r; });
+  poolBaseline.forEach(r => { const id = extractSpecimenId(r.sample); if (id) lookupBaseline[r.target+'|||'+id] = r; });
+
+  const rows = targets.map(t => {
+    const pairs = specimenIds.map(id => {
+      let b = lookupBaseline[t+'|||'+id] || null;
+      let i = lookupInterference[t+'|||'+id] || null;
+      if (b && i && b === i) i = null;
+      return { id, base: b, inf: i };
+    });
+    let concordant = 0, total = 0;
+    pairs.forEach(p => {
+      if (!p.base || !p.inf) return;
+      total++;
+      const callBase = isCqPositive(p.base.cqNum) ? 'Positive' : 'Negative';
+      const callInf = isCqPositive(p.inf.cqNum) ? 'Positive' : 'Negative';
+      if (callBase === callInf) concordant++;
+    });
+    const agreement = total ? (concordant/total)*100 : null;
+    return { target:t, pairs, concordant, total, agreement };
+  });
+
+  return { specimenIds, targets, rows };
+}
+
+function renderInterferenceMatrix(){
+  const holder = document.getElementById('infMatrixHolder');
+  if (!holder) return;
+  if (!getActiveData().length){ holder.innerHTML = `<div class="empty">${rawData.length ? 'No rows in the selected panel(s).' : 'Upload data first.'}</div>`; return; }
+  const { specimenIds, rows } = buildInterferenceMatrix();
+  if (!specimenIds.length){ holder.innerHTML = '<div class="empty">No specimens match these filters.</div>'; return; }
+
+  let html = `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
+    <th rowspan="2" class="col-target">Target Name</th>`;
+  specimenIds.forEach(id => html += `<th colspan="2" class="num">Specimen ${escapeHtml(id)}</th>`);
+  html += `<th class="col-divider" rowspan="2"></th>
+           <th colspan="3" class="concluded-head" style="text-align:center;">Concluded Interference Concordance</th></tr><tr>`;
+  specimenIds.forEach(() => html += '<th class="num">Sample</th><th class="num">+Interferent</th>');
+  html += `<th class="concluded-target">Target Name</th>
+           <th class="concluded-subhead">Count of concordant</th>
+           <th class="concluded-subhead">Agreement%</th></tr></thead><tbody>`;
+
+  rows.forEach(r => {
+    html += `<tr><td class="col-target">${escapeHtml(r.target)}</td>`;
+    r.pairs.forEach(p => {
+      const baseSan = getSanitizedCq(p.base);
+      const infSan = getSanitizedCq(p.inf);
+      const baseCls = p.base && isCqPositive(p.base.cqNum) ? 'pos' : 'neg';
+      const infCls = p.inf && isCqPositive(p.inf.cqNum) ? 'pos' : 'neg';
+      html += `<td class="rep-cell ${baseCls}">${escapeHtml(baseSan.text)}</td><td class="rep-cell ${infCls}">${escapeHtml(infSan.text)}</td>`;
+    });
+    html += `<td class="col-divider"></td>
+             <td class="concluded-target-cell">${escapeHtml(r.target)}</td>
+             <td class="stat-cell">${r.concordant}/${r.total}</td>
+             <td class="stat-cell stat-highlight">${fmt(r.agreement,0)}%</td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  holder.innerHTML = html;
+}
+
+function exportInterferenceMatrixXlsx(){
+  const { specimenIds, rows } = buildInterferenceMatrix();
+  const row1 = [''];
+  const row2 = ['Target Name'];
+  specimenIds.forEach(id => {
+    row1.push(`Specimen ${id}`, '', '');
+    row2.push('Sample', 'Sample+Interfering Substance', '');
+  });
+  row1.push('', '', '', '');
+  row2.push('Target Name', 'Count of concordant', 'Agreement%');
+  const aoa = [row1, row2];
+
+  rows.forEach((r, idx) => {
+    const excelRow = idx + 3;
+    const targetF = `IF(A${excelRow}="", "", A${excelRow})`;
+    const line = [r.target];
+    r.pairs.forEach(p => {
+      const b = getSanitizedCq(p.base);
+      const i = getSanitizedCq(p.inf);
+      line.push(b.val !== null ? b.val : b.text, i.val !== null ? i.val : i.text, '');
+    });
+    line.push(fCell(targetF, r.target), `${r.concordant}/${r.total}`, `${fmt(r.agreement,0)}%`);
+    aoa.push(line);
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Interference Study');
+  XLSX.writeFile(wb, 'Interference_Study_Matrix.xlsx');
+}
+
+/* ---------------------------------------------------------------------
+   7. STABILITY STUDY
+--------------------------------------------------------------------- */
+function getStabilityFilters(){
+  const get = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  return {
+    day1: get('stabDay1Filter') || 'Accuracy',
+    day3: get('stabDay3Filter'),
+    day5: get('stabDay5Filter'),
+    day7: get('stabDay7Filter'),
+    elution3: get('stabElution3Filter')
+  };
+}
+
+function poolAndLookup(filterText){
+  const filterNorm = normalize(filterText);
+  const pool = filterNorm ? getActiveData().filter(r => sampleFilterMatches(r, filterNorm)) : [];
+  const lookup = {};
+  pool.forEach(r => { const id = extractSpecimenId(r.sample); if (id) lookup[r.target+'|||'+id] = r; });
+  return { pool, lookup };
+}
+
+function buildStabilityMatrix(){
+  const f = getStabilityFilters();
+  const { pool: poolDay1, lookup: lkDay1 } = poolAndLookup(f.day1);
+  const { pool: poolDay3, lookup: lkDay3 } = poolAndLookup(f.day3);
+  const { pool: poolDay5, lookup: lkDay5 } = poolAndLookup(f.day5);
+  const { pool: poolDay7, lookup: lkDay7 } = poolAndLookup(f.day7);
+  const { pool: poolElution3, lookup: lkElution3 } = poolAndLookup(f.elution3);
+
+  const armPool = poolDay3.concat(poolDay5, poolDay7, poolElution3);
+  const specimenIds = Array.from(new Set(armPool.map(r => extractSpecimenId(r.sample)).filter(Boolean)))
+    .sort((a,b) => Number(a) - Number(b));
+  const targets = Array.from(new Set(armPool.map(r => r.target))).sort(naturalSort);
+
+  function concordance(lkArm, targetsList, idsList, lkBase){
+    const perTarget = {};
+    targetsList.forEach(t => {
+      let concordant = 0, total = 0;
+      idsList.forEach(id => {
+        const base = lkBase[t+'|||'+id], arm = lkArm[t+'|||'+id];
+        if (!base || !arm) return;
+        total++;
+        const callBase = isCqPositive(base.cqNum) ? 'Positive' : 'Negative';
+        const callArm = isCqPositive(arm.cqNum) ? 'Positive' : 'Negative';
+        if (callBase === callArm) concordant++;
+      });
+      perTarget[t] = { concordant, total, agreement: total ? (concordant/total)*100 : null };
+    });
+    return perTarget;
+  }
+
+  const concDay1 = concordance(lkDay1, targets, specimenIds, lkDay1);
+  const concDay3 = concordance(lkDay3, targets, specimenIds, lkDay1);
+  const concDay5 = concordance(lkDay5, targets, specimenIds, lkDay1);
+  const concDay7 = concordance(lkDay7, targets, specimenIds, lkDay1);
+  const concElution1 = concordance(lkDay1, targets, specimenIds, lkDay1);
+  const concElution3 = concordance(lkElution3, targets, specimenIds, lkDay1);
+
+  const rows = targets.map(t => {
+    const cells = specimenIds.map(id => ({
+      id,
+      day1: lkDay1[t+'|||'+id] || null,
+      elution3: lkElution3[t+'|||'+id] || null,
+      day3: lkDay3[t+'|||'+id] || null,
+      day5: lkDay5[t+'|||'+id] || null,
+      day7: lkDay7[t+'|||'+id] || null
+    }));
+    return {
+      target: t, cells,
+      day1: concDay1[t], day3: concDay3[t], day5: concDay5[t], day7: concDay7[t],
+      elution1: concElution1[t], elution3: concElution3[t]
+    };
+  });
+
+  return { specimenIds, targets, rows };
+}
+
+function renderStabilityMatrix(){
+  const holder = document.getElementById('stabMatrixHolder');
+  if (!holder) return;
+  if (!getActiveData().length){ holder.innerHTML = `<div class="empty">${rawData.length ? 'No rows in the selected panel(s).' : 'Upload data first.'}</div>`; return; }
+  const { specimenIds, rows } = buildStabilityMatrix();
+  if (!specimenIds.length){ holder.innerHTML = '<div class="empty">No rows matched stability timepoint filters.</div>'; return; }
+
+  let html = `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
+    <th rowspan="2" class="col-target">Target Name</th>`;
+  specimenIds.forEach(id => html += `<th colspan="5" class="num">Specimen ${escapeHtml(id)}</th>`);
+  html += `<th class="col-divider" rowspan="2"></th>
+           <th colspan="13" class="concluded-head" style="text-align:center;">Concluded Stability Concordance Summary</th></tr><tr>`;
+  specimenIds.forEach(() => html += '<th class="num">D1</th><th class="num">Elu D3</th><th class="num">D3</th><th class="num">D5</th><th class="num">D7</th>');
+
+  html += `<th class="concluded-target">Target Name</th>
+           <th class="concluded-subhead">Day 1 N</th><th class="concluded-subhead">%</th>
+           <th class="concluded-subhead">Day 3 N</th><th class="concluded-subhead">%</th>
+           <th class="concluded-subhead">Day 5 N</th><th class="concluded-subhead">%</th>
+           <th class="concluded-subhead">Day 7 N</th><th class="concluded-subhead">%</th>
+           <th class="concluded-subhead">Elu D1 N</th><th class="concluded-subhead">%</th>
+           <th class="concluded-subhead">Elu D3 N</th><th class="concluded-subhead">%</th></tr></thead><tbody>`;
+
+  rows.forEach(r => {
+    html += `<tr><td class="col-target">${escapeHtml(r.target)}</td>`;
+    r.cells.forEach(c => {
+      [c.day1, c.elution3, c.day3, c.day5, c.day7].forEach(cell => {
+        const s = getSanitizedCq(cell);
+        const cls = cell && isCqPositive(cell.cqNum) ? 'pos' : (cell ? 'neg' : '');
+        html += `<td class="rep-cell ${cls}">${escapeHtml(s.text)}</td>`;
+      });
+    });
+    html += `<td class="col-divider"></td>
+             <td class="concluded-target-cell">${escapeHtml(r.target)}</td>`;
+    [r.day1, r.day3, r.day5, r.day7, r.elution1, r.elution3].forEach(blk => {
+      html += `<td class="stat-cell">${blk.concordant}/${blk.total}</td><td class="stat-cell stat-highlight">${fmt(blk.agreement,0)}%</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  holder.innerHTML = html;
+}
+
+function exportStabilityMatrixXlsx(){
+  const { specimenIds, rows } = buildStabilityMatrix();
+  const row1 = [''];
+  const row2 = [''];
+  specimenIds.forEach(id => {
+    row1.push(`Specimen ${id}`, '', '', '', '');
+    row2.push('Sample Stability Day1', 'Elution Day3', 'Sample Stability Day3', 'Sample Stability Day5', 'Sample Stability Day7');
+  });
+  row1.push('', 'Day 1', '', 'Day 3', '', 'Day 5', '', 'Day 7', '', '', 'Elution plate Day 1', '', 'Elution plate Day 3', '');
+  row2.push('Target Name', 'Count of concordant', 'Agreement%', 'Count of concordant', 'Agreement%', 'Count of concordant', 'Agreement%', 'Count of concordant', 'Agreement%', '', 'Target Name', 'Count of concordant', 'Agreement%', 'Count of concordant', 'Agreement%');
+  const aoa = [row1, row2];
+  rows.forEach((r, idx) => {
+    const excelRow = idx + 3;
+    const targetF = `IF(A${excelRow}="", "", A${excelRow})`;
+    const line = [r.target];
+    r.cells.forEach(c => {
+      [c.day1, c.elution3, c.day3, c.day5, c.day7].forEach(cell => {
+        const s = getSanitizedCq(cell);
+        line.push(s.val !== null ? s.val : s.text);
+      });
+    });
+    line.push(
+      fCell(targetF, r.target),
+      `${r.day1.concordant}/${r.day1.total}`, `${fmt(r.day1.agreement,0)}%`,
+      `${r.day3.concordant}/${r.day3.total}`, `${fmt(r.day3.agreement,0)}%`,
+      `${r.day5.concordant}/${r.day5.total}`, `${fmt(r.day5.agreement,0)}%`,
+      `${r.day7.concordant}/${r.day7.total}`, `${fmt(r.day7.agreement,0)}%`,
+      '', fCell(targetF, r.target), `${r.elution1.concordant}/${r.elution1.total}`, `${fmt(r.elution1.agreement,0)}%`,
+      `${r.elution3.concordant}/${r.elution3.total}`, `${fmt(r.elution3.agreement,0)}%`
+    );
+    aoa.push(line);
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Stability Study');
+  XLSX.writeFile(wb, 'Stability_Study_Matrix.xlsx');
+}
+
+/* ---------------------------------------------------------------------
+   NAVIGATION & CONTROLS
+--------------------------------------------------------------------- */
+document.querySelectorAll('.rail button.nav-item').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.rail button.nav-item').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const key = btn.getAttribute('data-tab');
+    document.querySelectorAll('.tabpane').forEach(p => p.style.display = 'none');
+    ensureStudyTabDom(key);
+    const pane = document.getElementById('tab-'+key);
+    if (pane) pane.style.display = 'block';
+    if (key === 'correlation') renderCorrelationMatrix();
+    if (key === 'sensitivity') renderSensitivityMatrix();
+    if (key === 'intra' || key === 'inter') renderPrecisionMatrix(key);
+    if (key === 'linearity') renderLinearityMatrix();
+    if (key === 'interference') renderInterferenceMatrix();
+    if (key === 'stability') renderStabilityMatrix();
+    if (key === 'report') renderReport();
+  });
+});
+
+const dz = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+dz.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => { Array.from(e.target.files).forEach(loadFile); fileInput.value=''; });
+['dragover','dragenter'].forEach(evt => dz.addEventListener(evt, e => { e.preventDefault(); dz.classList.add('drag'); }));
+['dragleave','drop'].forEach(evt => dz.addEventListener(evt, e => { e.preventDefault(); dz.classList.remove('drag'); }));
+dz.addEventListener('drop', e => { Array.from(e.dataTransfer.files).forEach(loadFile); });
+
+document.getElementById('clearDataBtn').addEventListener('click', () => {
+  if (!confirm('Clear all loaded data and files?')) return;
+  rawData = [];
+  loadedFiles = {};
+  afterDataLoaded();
+});
+
+document.getElementById('cutoffInput').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  cutoff = isFinite(v) ? v : 34;
+  renderAllStudies();
+});
+
+document.getElementById('eliminateEarlyToggle').addEventListener('change', e => {
+  eliminateEarly = e.target.checked;
+  renderAllStudies();
+});
+
+document.getElementById('earlyCtInput').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  earlyCt = isFinite(v) ? v : 13;
+  if (eliminateEarly) renderAllStudies();
+});
+
+document.addEventListener('input', e => {
+  if (e.target && /^(corrFilter|sensFilter|intraPcFilter|intraNcFilter|interPcFilter|interNcFilter|linFilter|infBaselineFilter|infInterferenceFilter|infSpecFrom|infSpecTo|stabDay1Filter|stabDay3Filter|stabDay5Filter|stabDay7Filter|stabElution3Filter)$/.test(e.target.id)) renderStudyAvailability();
+});
+
+document.addEventListener('click', e => {
+  const action = e.target.getAttribute && e.target.getAttribute('data-action');
+  if (action === 'removefile') removeFile(e.target.getAttribute('data-file'));
+});
+
+const dlSamples = document.createElement('datalist'); dlSamples.id='dl-samples'; document.body.appendChild(dlSamples);
+const dlTargets = document.createElement('datalist'); dlTargets.id='dl-targets'; document.body.appendChild(dlTargets);
+function refreshDatalists(){
+  dlSamples.innerHTML = uniquePrefixes().map(p=>`<option value="${escapeHtml(p)}">`).join('');
+  dlTargets.innerHTML = uniqueTargets().map(t=>`<option value="${escapeHtml(t)}">`).join('');
+}
+
+/* ---------------------------------------------------------------------
+   REPORT & BULK EXPORT
+--------------------------------------------------------------------- */
+function renderReport(){
+  const body = document.getElementById('reportBody');
+  let html = '';
+  STUDY_DEFS.forEach(def => {
+    html += `<div class="panel"><h2>${escapeHtml(def.sheet)}</h2>`;
+
+    if (def.key === 'correlation'){
+      const { samples, rows } = buildCorrelationMatrix();
+      if (samples.length){
+        html += `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
+          <th class="col-target" rowspan="2">Target Name</th>
+          <th colspan="${samples.length}">Replicates / Samples (${samples.length})</th>
+          <th class="col-divider" rowspan="2"></th>
+          <th class="concluded-head" colspan="5">Concluded Agreement Summary</th>
+        </tr><tr>`;
+        samples.forEach(s => html += `<th>${escapeHtml(s)}</th>`);
+        html += `<th class="concluded-target">Target Name</th>
+                 <th class="concluded-subhead">Positive</th>
+                 <th class="concluded-subhead">Negative</th>
+                 <th class="concluded-subhead">Concordant</th>
+                 <th class="concluded-subhead">Agreement%</th></tr></thead><tbody>`;
+        rows.forEach(r => {
+          html += `<tr><td class="col-target">${escapeHtml(r.target)}</td>
+                   ${r.cells.map(c=>{
+                     const s = getSanitizedCq(c);
+                     return `<td class="rep-cell">${escapeHtml(s.text)}</td>`;
+                   }).join('')}
+                   <td class="col-divider"></td>
+                   <td class="concluded-target-cell">${escapeHtml(r.target)}</td>
+                   <td class="stat-cell">${r.posCount}/${r.total}</td>
+                   <td class="stat-cell">${r.negCount}/${r.total}</td>
+                   <td class="stat-cell">${r.concordant}/${r.total}</td>
+                   <td class="stat-cell stat-highlight">${fmt(r.agreement,0)}%</td></tr>`;
+        });
+        html += `</tbody></table></div>`;
+      } else {
+        html += '<div class="empty">No correlation data loaded.</div>';
+      }
+    }
+
+    if (def.key === 'sensitivity'){
+      const { samples, rows } = buildSensitivityMatrix();
+      if (samples.length){
+        html += `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
+          <th class="col-target" rowspan="2">Target Name</th>
+          <th colspan="${samples.length}">Replicate</th>
+          <th class="stat-head" colspan="3">Statistics</th>
+          <th class="col-divider" rowspan="2"></th>
+          <th class="concluded-head" colspan="6">Concluded Summary &amp; Concordance</th>
+        </tr><tr>`;
+        samples.forEach((_, idx) => html += `<th>${idx + 1}</th>`);
+        html += `<th class="stat-head">Mean</th><th class="stat-head">SD</th><th class="stat-head">%CV</th>`;
+        html += `<th class="concluded-target">Target Name</th>`;
+        html += `<th class="concluded-subhead">Count of concordant</th><th class="concluded-subhead">Agreement%</th>`;
+        html += `<th class="concluded-subhead">Mean</th><th class="concluded-subhead">SD</th><th class="concluded-subhead">%CV</th></tr></thead><tbody>`;
+        rows.forEach(r => {
+          html += `<tr><td class="col-target">${escapeHtml(r.target)}</td>`;
+          r.cells.forEach(c => {
+            const s = getSanitizedCq(c);
+            const isPos = c && isCqPositive(c.cqNum);
+            html += `<td class="rep-cell ${isPos?'pos':'neg'}">${escapeHtml(s.text)}</td>`;
+          });
+          html += `<td class="stat-cell">${fmt(r.stats.mean, 3)}</td>
+            <td class="stat-cell">${fmt(r.stats.sd, 4)}</td>
+            <td class="stat-cell stat-highlight">${fmt(r.stats.cv, 2)}%</td>
+            <td class="col-divider"></td>
+            <td class="concluded-target-cell">${escapeHtml(r.target)}</td>
+            <td class="stat-cell">${r.posCount}/${r.total}</td>
+            <td class="stat-cell stat-highlight">${fmt(r.agreement, 0)}%</td>
+            <td class="stat-cell">${fmt(r.stats.mean, 3)}</td>
+            <td class="stat-cell">${fmt(r.stats.sd, 4)}</td>
+            <td class="stat-cell stat-highlight">${fmt(r.stats.cv, 2)}%</td></tr>`;
+        });
+        html += `</tbody></table></div>`;
+      } else {
+        html += '<div class="empty">No sensitivity data loaded.</div>';
+      }
+    }
+
+    if (def.key === 'intra' || def.key === 'inter'){
+      const { pcSamples, ncSamples, rows } = buildPrecisionMatrix(def.key);
+      const titlePrefix = def.key === 'intra' ? 'Intra-Study' : 'Inter-Study';
+      if (pcSamples.length || ncSamples.length){
+        html += `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
+          <th class="col-target">${titlePrefix} positive</th>
+          <th colspan="${Math.max(1, pcSamples.length)}">Replicates</th>
+          <th class="stat-head">Mean</th><th class="stat-head">SD</th><th class="stat-head">%CV</th>
+          <th class="col-divider"></th>
+          <th class="concluded-head">${titlePrefix} Negative</th>
+          <th colspan="${Math.max(1, ncSamples.length)}" class="concluded-head">Replicates</th>
+        </tr></thead><tbody>`;
+        rows.forEach(r => {
+          html += `<tr><td class="col-target">${escapeHtml(r.target)}</td>`;
+          if (r.pcCells.length) r.pcCells.forEach(c => {
+            const s = getSanitizedCq(c);
+            html += `<td class="rep-cell ${c && isCqPositive(c.cqNum)?'pos':'neg'}">${escapeHtml(s.text)}</td>`;
+          });
+          else html += `<td class="rep-cell neg">—</td>`;
+          html += `<td class="stat-cell">${fmt(r.stats.mean,3)}</td><td class="stat-cell">${fmt(r.stats.sd,4)}</td><td class="stat-cell stat-highlight">${fmt(r.stats.cv,2)}%</td>`;
+          html += `<td class="col-divider"></td><td class="concluded-target-cell">${escapeHtml(r.target)}</td>`;
+          if (r.ncCells.length) r.ncCells.forEach(c => {
+            const s = getSanitizedCq(c);
+            html += `<td class="rep-cell ${c && isCqPositive(c.cqNum)?'pos':'neg'}">${escapeHtml(s.text)}</td>`;
+          });
+          else html += `<td class="rep-cell neg">—</td>`;
+          html += `</tr>`;
+        });
+        html += `</tbody></table></div>`;
+      } else {
+        html += '<div class="empty">No precision data loaded.</div>';
+      }
+    }
+
+    if (def.key === 'linearity'){
+      const { tierData, rows } = buildLinearityMatrix();
+      if (rows.length){
+        html += `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
+          <th class="col-target" rowspan="2">Target Name</th>`;
+        tierData.forEach(td => html += `<th colspan="${Math.max(1, td.samples.length)}" style="text-align:center;">${escapeHtml(td.label)}</th>`);
+        html += `<th class="col-divider" rowspan="2"></th>
+                 <th class="concluded-head" colspan="${tierData.length + 2}" style="text-align:center;">Concluded Linearity Regression</th>
+                 </tr><tr>`;
+        tierData.forEach(td => {
+          if (td.samples.length) td.samples.forEach((_, idx) => html += `<th>Rep ${idx+1}</th>`);
+          else html += `<th>—</th>`;
+        });
+        html += `<th class="concluded-target">Target Name</th>`;
+        tierData.forEach(td => html += `<th class="concluded-subhead">${td.copies} c/mL</th>`);
+        html += `<th class="concluded-subhead" style="text-align:center;">R²</th></tr></thead><tbody>`;
+        rows.forEach(r => {
+          html += `<tr><td class="col-target">${escapeHtml(r.target)}</td>`;
+          r.tierCells.forEach(tc => {
+            if (tc.cells.length){
+              tc.cells.forEach(c => {
+                const s = getSanitizedCq(c);
+                html += `<td class="rep-cell ${c && isCqPositive(c.cqNum)?'pos':'neg'}">${escapeHtml(s.text)}</td>`;
+              });
+            } else {
+              html += `<td class="rep-cell neg">—</td>`;
+            }
+          });
+          html += `<td class="col-divider"></td>
+                   <td class="concluded-target-cell">${escapeHtml(r.target)}</td>`;
+          r.tierMeans.forEach(m => html += `<td class="stat-cell">${fmt(m, 3)}</td>`);
+          html += `<td class="stat-rsq">${fmt(r.rsq, 4)}</td></tr>`;
+        });
+        html += `</tbody></table></div>`;
+      } else {
+        html += '<div class="empty">No linearity data loaded.</div>';
+      }
+    }
+
+    if (def.key === 'interference'){
+      const { specimenIds, rows } = buildInterferenceMatrix();
+      if (specimenIds.length){
+        html += `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
+          <th rowspan="2" class="col-target">Target Name</th>`;
+        specimenIds.forEach(id => html += `<th colspan="2" class="num">Specimen ${escapeHtml(id)}</th>`);
+        html += `<th class="col-divider" rowspan="2"></th>
+                 <th colspan="3" class="concluded-head" style="text-align:center;">Concluded Interference Concordance</th></tr><tr>`;
+        specimenIds.forEach(() => html += '<th class="num">Sample</th><th class="num">+Interferent</th>');
+        html += `<th class="concluded-target">Target Name</th>
+                 <th class="concluded-subhead">Count of concordant</th>
+                 <th class="concluded-subhead">Agreement%</th></tr></thead><tbody>`;
+        rows.forEach(r => {
+          html += `<tr><td class="col-target">${escapeHtml(r.target)}</td>`;
+          r.pairs.forEach(p => {
+            const b = getSanitizedCq(p.base);
+            const i = getSanitizedCq(p.inf);
+            html += `<td class="rep-cell">${escapeHtml(b.text)}</td><td class="rep-cell">${escapeHtml(i.text)}</td>`;
+          });
+          html += `<td class="col-divider"></td>
+                   <td class="concluded-target-cell">${escapeHtml(r.target)}</td>
+                   <td class="stat-cell">${r.concordant}/${r.total}</td>
+                   <td class="stat-cell stat-highlight">${fmt(r.agreement,0)}%</td></tr>`;
+        });
+        html += `</tbody></table></div>`;
+      } else {
+        html += '<div class="empty">No interference data loaded.</div>';
+      }
+    }
+
+    if (def.key === 'stability'){
+      const { specimenIds, rows } = buildStabilityMatrix();
+      if (specimenIds.length){
+        html += `<div class="matrix-table-wrap"><table class="matrix-table"><thead><tr>
+          <th rowspan="2" class="col-target">Target Name</th>`;
+        specimenIds.forEach(id => html += `<th colspan="5" class="num">Specimen ${escapeHtml(id)}</th>`);
+        html += `<th class="col-divider" rowspan="2"></th>
+                 <th colspan="13" class="concluded-head" style="text-align:center;">Concluded Stability Concordance Summary</th></tr><tr>`;
+        specimenIds.forEach(() => html += '<th class="num">D1</th><th class="num">Elu D3</th><th class="num">D3</th><th class="num">D5</th><th class="num">D7</th>');
+        html += `<th class="concluded-target">Target Name</th>
+                 <th class="concluded-subhead">Day 1 N</th><th class="concluded-subhead">%</th>
+                 <th class="concluded-subhead">Day 3 N</th><th class="concluded-subhead">%</th>
+                 <th class="concluded-subhead">Day 5 N</th><th class="concluded-subhead">%</th>
+                 <th class="concluded-subhead">Day 7 N</th><th class="concluded-subhead">%</th>
+                 <th class="concluded-subhead">Elu D1 N</th><th class="concluded-subhead">%</th>
+                 <th class="concluded-subhead">Elu D3 N</th><th class="concluded-subhead">%</th></tr></thead><tbody>`;
+        rows.forEach(r => {
+          html += `<tr><td class="col-target">${escapeHtml(r.target)}</td>`;
+          r.cells.forEach(c => {
+            [c.day1, c.elution3, c.day3, c.day5, c.day7].forEach(cell => {
+              const s = getSanitizedCq(cell);
+              const cls = cell && isCqPositive(cell.cqNum) ? 'pos' : (cell ? 'neg' : '');
+              html += `<td class="rep-cell ${cls}">${escapeHtml(s.text)}</td>`;
+            });
+          });
+          html += `<td class="col-divider"></td>
+                   <td class="concluded-target-cell">${escapeHtml(r.target)}</td>`;
+          [r.day1, r.day3, r.day5, r.day7, r.elution1, r.elution3].forEach(blk => {
+            html += `<td class="stat-cell">${blk.concordant}/${blk.total}</td><td class="stat-cell stat-highlight">${fmt(blk.agreement,0)}%</td>`;
+          });
+          html += '</tr>';
+        });
+        html += `</tbody></table></div>`;
+      } else {
+        html += '<div class="empty">No stability data loaded.</div>';
+      }
+    }
+
+    html += `</div>`;
+  });
+  body.innerHTML = html;
+}
+
+document.getElementById('printReportBtn').addEventListener('click', () => { renderReport(); window.print(); });
+
+document.getElementById('exportXlsxBtn').addEventListener('click', () => {
+  const wb = XLSX.utils.book_new();
+
+  STUDY_DEFS.forEach(def => {
+    const aoa = [];
+
+    if (def.key === 'correlation'){
+      const { samples, rows } = buildCorrelationMatrix();
+      if (samples.length){
+        aoa.push(['Target Name', ...samples.map(s => s), '', 'Target Name', 'Count of positive', 'Count of negative', 'Concordant', 'Agreement']);
+        aoa.push(['Target Name', ...samples.map(() => 'Measured'), '', '', '', '', '', '']);
+        rows.forEach((r, idx) => {
+          const excelRow = idx + 3;
+          const targetF = `IF(A${excelRow}="", "", A${excelRow})`;
+          aoa.push([
+            r.target,
+            ...r.cells.map(c => {
+              const s = getSanitizedCq(c);
+              return s.val !== null ? s.val : s.text;
+            }),
+            '',
+            fCell(targetF, r.target),
+            `${r.posCount}/${r.total}`,
+            `${r.negCount}/${r.total}`,
+            `${r.concordant}/${r.total}`,
+            `${fmt(r.agreement,0)}%`
+          ]);
+        });
+      }
+    }
+
+    if (def.key === 'sensitivity'){
+      const { samples, rows } = buildSensitivityMatrix();
+      if (samples.length){
+        const N = Math.max(1, samples.length);
+        const row1 = ['Sensitivity Study (LOD) '];
+        const row2 = ['', 'Replicate'];
+        for (let i = 1; i < N; i++) row2.push('');
+
+        const row3 = ['Target Name'];
+        samples.forEach((_, idx) => row3.push(idx + 1));
+        row3.push('Mean', 'SD', '%CV', '', 'Target Name', 'Count of concordant', 'Agreement%', 'Mean', 'SD', '%CV');
+        aoa.push(row1, row2, row3);
+
+        const startCol = 'B';
+        const endCol = colToLetter(1 + N);
+        const meanCol = colToLetter(1 + N + 1);
+        const sdCol = colToLetter(1 + N + 2);
+        const cvCol = colToLetter(1 + N + 3);
+
+        rows.forEach((r, idx) => {
+          const excelRow = idx + 4;
+          const meanF = `AVERAGE(${startCol}${excelRow}:${endCol}${excelRow})`;
+          const sdF = `STDEVP(${startCol}${excelRow}:${endCol}${excelRow})`;
+          const cvF = `(${sdCol}${excelRow}/${meanCol}${excelRow})*100`;
+
+          const targetF = `IF(A${excelRow}="", "", A${excelRow})`;
+          const concF = `(COUNT(${startCol}${excelRow}:${endCol}${excelRow}))&"/"&(${N})`;
+          const agreeF = `TEXT(COUNT(${startCol}${excelRow}:${endCol}${excelRow})/${N}, "0%")`;
+          const mirrorMeanF = `IF(${meanCol}${excelRow}="", "", ${meanCol}${excelRow})`;
+          const mirrorSdF = `IF(${sdCol}${excelRow}="", "", ${sdCol}${excelRow})`;
+          const mirrorCvF = `IF(${cvCol}${excelRow}="", "", ${cvCol}${excelRow})`;
+
+          aoa.push([
+            r.target,
+            ...r.cells.map(c => {
+              const s = getSanitizedCq(c);
+              return s.val !== null ? s.val : s.text;
+            }),
+            fCell(meanF, r.stats.mean, '0.000'),
+            fCell(sdF, r.stats.sd, '0.0000'),
+            fCell(cvF, r.stats.cv, '0.00%'),
+            '',
+            fCell(targetF, r.target),
+            fCell(concF, `${r.posCount}/${N}`),
+            fCell(agreeF, `${Math.round(r.agreement || 0)}%`),
+            fCell(mirrorMeanF, r.stats.mean, '0.000'),
+            fCell(mirrorSdF, r.stats.sd, '0.0000'),
+            fCell(mirrorCvF, r.stats.cv, '0.00%')
+          ]);
+        });
+      }
+    }
+
+    if (def.key === 'intra' || def.key === 'inter'){
+      const { pcSamples, ncSamples, rows } = buildPrecisionMatrix(def.key);
+      if (pcSamples.length || ncSamples.length){
+        const titlePrefix = def.key === 'intra' ? 'Intra-Study' : 'Inter-Study';
+        aoa.push([`${titlePrefix} positive`, ...pcSamples.map(()=>'Replicate'), 'Mean', 'SD', '%CV', '', `${titlePrefix} Negative`, ...ncSamples.map(()=>'Replicate')]);
+        aoa.push(['Target Name', ...pcSamples.map((_, i)=>`Rep ${i+1}`), 'Mean', 'SD', '%CV', '', 'Target Name', ...ncSamples.map((_, i)=>`Rep ${i+1}`)]);
+
+        const pcN = Math.max(1, pcSamples.length);
+        rows.forEach((r, idx) => {
+          const excelRow = idx + 3;
+          const startCol = 'B';
+          const endCol = colToLetter(1 + pcN);
+          const meanCol = colToLetter(1 + pcN + 1);
+          const sdCol = colToLetter(1 + pcN + 2);
+
+          const meanF = `AVERAGE(${startCol}${excelRow}:${endCol}${excelRow})`;
+          const sdF = `STDEVP(${startCol}${excelRow}:${endCol}${excelRow})`;
+          const cvF = `(${sdCol}${excelRow}/${meanCol}${excelRow})*100`;
+
+          aoa.push([
+            r.target,
+            ...r.pcCells.map(c => {
+              const s = getSanitizedCq(c);
+              return s.val !== null ? s.val : s.text;
+            }),
+            fCell(meanF, r.stats.mean, '0.000'),
+            fCell(sdF, r.stats.sd, '0.0000'),
+            fCell(cvF, r.stats.cv, '0.00%'),
+            '',
+            r.target,
+            ...r.ncCells.map(c => {
+              const s = getSanitizedCq(c);
+              return s.val !== null ? s.val : s.text;
+            })
+          ]);
+        });
+      }
+    }
+
+    if (def.key === 'linearity'){
+      const { tierData, rows } = buildLinearityMatrix();
+      if (rows.length){
+        const row1 = ['Linearity Study '];
+        let repColCount = 0;
+        tierData.forEach(td => repColCount += Math.max(1, td.samples.length));
+        for (let i = 1; i < repColCount; i++) row1.push('');
+        row1.push('');
+        row1.push('');
+        row1.push('Enter the copies number');
+
+        const row2 = ['Target Name'];
+        tierData.forEach(td => {
+          row2.push(td.label);
+          const span = Math.max(1, td.samples.length);
+          for (let i = 1; i < span; i++) row2.push('');
+        });
+        row2.push('');
+        row2.push('');
+        tierData.forEach(td => row2.push(td.copies));
+        row2.push('');
+
+        const row3 = [''];
+        tierData.forEach(td => {
+          const span = Math.max(1, td.samples.length);
+          for (let i = 1; i <= span; i++) row3.push(i);
+        });
+        row3.push('');
+        row3.push('Target Name');
+
+        const copyStartColIdx = repColCount + 4;
+        tierData.forEach((_, idx) => {
+          const colLet = colToLetter(copyStartColIdx + idx);
+          row3.push(fCell(`LOG10(${colLet}2)`, Math.log10(tierData[idx].copies), '0.0000'));
+        });
+        row3.push('R2');
+
+        aoa.push(row1, row2, row3);
+
+        const tierColRanges = [];
+        let curCol = 2;
+        tierData.forEach(td => {
+          const span = Math.max(1, td.samples.length);
+          tierColRanges.push({ start: colToLetter(curCol), end: colToLetter(curCol + span - 1) });
+          curCol += span;
+        });
+
+        const meanStartColIdx = copyStartColIdx;
+        const meanEndColIdx = meanStartColIdx + tierData.length - 1;
+        const meanStartColLet = colToLetter(meanStartColIdx);
+        const meanEndColLet = colToLetter(meanEndColIdx);
+
+        rows.forEach((r, idx) => {
+          const excelRow = idx + 4;
+          const targetF = `IF(A${excelRow}="", "", A${excelRow})`;
+          const line = [r.target];
+
+          r.tierCells.forEach(tc => {
+            if (tc.cells.length) {
+              tc.cells.forEach(c => {
+                const s = getSanitizedCq(c);
+                line.push(s.val !== null ? s.val : s.text);
+              });
+            } else {
+              line.push('UNDETERMINED');
+            }
+          });
+
+          line.push('');
+          line.push(fCell(targetF, r.target));
+
+          tierColRanges.forEach((rng, tIdx) => {
+            const avgF = `AVERAGE(${rng.start}${excelRow}:${rng.end}${excelRow})`;
+            line.push(fCell(avgF, r.tierMeans[tIdx], '0.000'));
+          });
+
+          const rsqF = `RSQ(${meanStartColLet}${excelRow}:${meanEndColLet}${excelRow}, $${meanStartColLet}$3:$${meanEndColLet}$3)`;
+          line.push(fCell(rsqF, r.rsq, '0.0000'));
+
+          aoa.push(line);
+        });
+      }
+    }
+
+    if (def.key === 'interference'){
+      const { specimenIds, rows } = buildInterferenceMatrix();
+      if (specimenIds.length){
+        const row1 = [''];
+        const row2 = ['Target Name'];
+        specimenIds.forEach(id => {
+          row1.push(`Specimen ${id}`, '', '');
+          row2.push('Sample', 'Sample+Interfering Substance', '');
+        });
+        row1.push('', '', '', '');
+        row2.push('Target Name', 'Count of concordant', 'Agreement%');
+        aoa.push(row1, row2);
+
+        rows.forEach((r, idx) => {
+          const excelRow = idx + 3;
+          const targetF = `IF(A${excelRow}="", "", A${excelRow})`;
+          const line = [r.target];
+          r.pairs.forEach(p => {
+            const b = getSanitizedCq(p.base);
+            const i = getSanitizedCq(p.inf);
+            line.push(b.val !== null ? b.val : b.text, i.val !== null ? i.val : i.text, '');
+          });
+          line.push(fCell(targetF, r.target), `${r.concordant}/${r.total}`, `${fmt(r.agreement,0)}%`);
+          aoa.push(line);
+        });
+      }
+    }
+
+    if (def.key === 'stability'){
+      const { specimenIds, rows } = buildStabilityMatrix();
+      if (specimenIds.length){
+        const row1 = [''];
+        const row2 = [''];
+        specimenIds.forEach(id => {
+          row1.push(`Specimen ${id}`, '', '', '', '');
+          row2.push('Sample Stability Day1', 'Elution Day3', 'Sample Stability Day3', 'Sample Stability Day5', 'Sample Stability Day7');
+        });
+        row1.push('', 'Day 1', '', 'Day 3', '', 'Day 5', '', 'Day 7', '', '', 'Elution plate Day 1', '', 'Elution plate Day 3', '');
+        row2.push('Target Name', 'Count of concordant', 'Agreement%', 'Count of concordant', 'Agreement%', 'Count of concordant', 'Agreement%', 'Count of concordant', 'Agreement%', '', 'Target Name', 'Count of concordant', 'Agreement%', 'Count of concordant', 'Agreement%');
+        aoa.push(row1, row2);
+
+        rows.forEach((r, idx) => {
+          const excelRow = idx + 3;
+          const targetF = `IF(A${excelRow}="", "", A${excelRow})`;
+          const line = [r.target];
+          r.cells.forEach(c => {
+            [c.day1, c.elution3, c.day3, c.day5, c.day7].forEach(cell => {
+              const s = getSanitizedCq(cell);
+              line.push(s.val !== null ? s.val : s.text);
+            });
+          });
+          line.push(
+            fCell(targetF, r.target),
+            `${r.day1.concordant}/${r.day1.total}`, `${fmt(r.day1.agreement,0)}%`,
+            `${r.day3.concordant}/${r.day3.total}`, `${fmt(r.day3.agreement,0)}%`,
+            `${r.day5.concordant}/${r.day5.total}`, `${fmt(r.day5.agreement,0)}%`,
+            `${r.day7.concordant}/${r.day7.total}`, `${fmt(r.day7.agreement,0)}%`,
+            '', fCell(targetF, r.target), `${r.elution1.concordant}/${r.elution1.total}`, `${fmt(r.elution1.agreement,0)}%`,
+            `${r.elution3.concordant}/${r.elution3.total}`, `${fmt(r.elution3.agreement,0)}%`
+          );
+          aoa.push(line);
+        });
+      }
+    }
+
+    if (aoa.length){
+      const sheetName = def.sheet.substring(0,31);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), sheetName);
+    }
+  });
+
+  XLSX.writeFile(wb, 'Validation_Summary_Report.xlsx');
+});
+
+STUDY_DEFS.forEach(d => ensureStudyTabDom(d.key));
+renderStudySummary();
+
+/* ---------------------------------------------------------------------
+   SESSION: AUTO-SAVE (IndexedDB) + SESSION FILE (.json)
+--------------------------------------------------------------------- */
+const SESSION_DB = 'qpcrAnalyzerSession', SESSION_STORE = 'kv', SESSION_KEY = 'current';
+let _restoring = false, _saveTimer = null, _idbOk = true;
+
+function idb(){
+  return new Promise((resolve, reject) => {
+    let req;
+    try { req = indexedDB.open(SESSION_DB, 1); } catch(e){ reject(e); return; }
+    req.onupgradeneeded = () => req.result.createObjectStore(SESSION_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbGet(key){
+  return idb().then(db => new Promise((res, rej) => {
+    const r = db.transaction(SESSION_STORE).objectStore(SESSION_STORE).get(key);
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  }));
+}
+function idbSet(key, val){
+  return idb().then(db => new Promise((res, rej) => {
+    const tx = db.transaction(SESSION_STORE, 'readwrite');
+    tx.objectStore(SESSION_STORE).put(val, key);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  }));
+}
+function idbDel(key){
+  return idb().then(db => new Promise((res, rej) => {
+    const tx = db.transaction(SESSION_STORE, 'readwrite');
+    tx.objectStore(SESSION_STORE).delete(key);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  }));
+}
+
+function captureState(){
+  const inputs = {};
+  document.querySelectorAll('input[id],select[id]').forEach(el => {
+    if (el.type === 'file') return;
+    inputs[el.id] = (el.type === 'checkbox') ? el.checked : el.value;
+  });
+  const activeBtn = document.querySelector('.rail button.nav-item.active');
+  const keywords = {};
+  STUDY_DEFS.forEach(d => keywords[d.key] = d.keyword);
+  return {
+    app: 'qpcr-validation-analyzer', v: 1, savedAt: new Date().toISOString(),
+    rows: rawData.map(r => ({sample:r.sample, target:r.target, cqRaw:r.cqRaw, cqNum:r.cqNum, panel:r.panel, file:r.file, day:r.day})),
+    loadedFiles, excludedPanels: Array.from(excludedPanels),
+    cutoff, eliminateEarly, earlyCt, sensMaxReps, keywords, inputs,
+    activeTab: activeBtn ? activeBtn.getAttribute('data-tab') : 'data'
+  };
+}
+
+function setSessionStatus(msg){
+  const el = document.getElementById('sessionStatus'); if (el) el.textContent = msg;
+}
+
+function scheduleSave(){
+  if (_restoring) return;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async () => {
+    try {
+      const st = captureState();
+      await idbSet(SESSION_KEY, st);
+      _idbOk = true;
+      setSessionStatus(`Auto-saved ${new Date(st.savedAt).toLocaleTimeString()} · ${st.rows.length} rows, ${Object.keys(st.loadedFiles).length} file(s).`);
+    } catch(e){
+      _idbOk = false;
+      setSessionStatus('Auto-save unavailable in this browser. Use "Save session file" to keep your work.');
+    }
+  }, 400);
+}
+
+function applyState(st){
+  if (!st || !Array.isArray(st.rows)) throw new Error('Not a valid session file.');
+  _restoring = true;
+  try {
+    rawData = st.rows.map(r => ({
+      sample: r.sample, target: r.target, cqRaw: r.cqRaw, cqNum: r.cqNum, panel: r.panel || derivePanel(r.sample),
+      file: r.file, day: r.day,
+      _sampleNorm: normalize(r.sample),
+      _search: normalize(r.sample + ' ' + r.day + ' ' + r.file)
+    }));
+    loadedFiles = st.loadedFiles || {};
+    excludedPanels = new Set(st.excludedPanels || []);
+    if (isFinite(st.cutoff)) cutoff = st.cutoff;
+    eliminateEarly = st.eliminateEarly !== false;
+    if (isFinite(st.earlyCt)) earlyCt = st.earlyCt;
+    if (isFinite(st.sensMaxReps)) sensMaxReps = st.sensMaxReps;
+    STUDY_DEFS.forEach(d => { if (st.keywords && typeof st.keywords[d.key] === 'string') d.keyword = st.keywords[d.key]; });
+    STUDY_DEFS.forEach(d => ensureStudyTabDom(d.key));
+    Object.entries(st.inputs || {}).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if (!el || el.type === 'file') return;
+      if (el.type === 'checkbox') el.checked = !!val; else el.value = val;
+    });
+    document.getElementById('cutoffInput').value = cutoff;
+    document.getElementById('eliminateEarlyToggle').checked = eliminateEarly;
+    document.getElementById('earlyCtInput').value = earlyCt;
+    renderStudySummary();
+    afterDataLoaded();
+    const btn = document.querySelector(`.rail button.nav-item[data-tab="${st.activeTab || 'data'}"]`);
+    if (btn) btn.click();
+  } finally {
+    _restoring = false;
+  }
+}
+
+async function restoreSession(){
+  try {
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+    const st = await idbGet(SESSION_KEY);
+    if (st && st.rows && st.rows.length){
+      applyState(st);
+      setSessionStatus(`Restored previous session (saved ${new Date(st.savedAt).toLocaleString()}) · ${st.rows.length} rows, ${Object.keys(st.loadedFiles||{}).length} file(s).`);
+    }
+  } catch(e){
+    _idbOk = false;
+    setSessionStatus('Auto-save unavailable in this browser. Use "Save session file" to keep your work.');
+  }
+}
+
+document.getElementById('saveSessionBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(captureState())], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `qpcr-session-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+document.getElementById('loadSessionBtn').addEventListener('click', () => document.getElementById('sessionFileInput').click());
+document.getElementById('sessionFileInput').addEventListener('change', e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  if (rawData.length && !confirm('Replace the current session with this file?')) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try { applyState(JSON.parse(reader.result)); scheduleSave(); setSessionStatus(`Loaded session file ${f.name}.`); }
+    catch(err){ alert('Cannot open session file: ' + err.message); }
+  };
+  reader.readAsText(f);
+});
+document.getElementById('resetSessionBtn').addEventListener('click', async () => {
+  if (!confirm('Delete the auto-saved session and clear all data, settings and filters? This reloads the page.')) return;
+  try { await idbDel(SESSION_KEY); } catch(e){}
+  location.reload();
+});
+
+// any control change or tab switch triggers a save
+document.addEventListener('input', scheduleSave);
+document.addEventListener('change', scheduleSave);
+document.querySelectorAll('.rail button.nav-item').forEach(b => b.addEventListener('click', scheduleSave));
+window.addEventListener('pagehide', () => { if (!_restoring && !_saveTimer) return; try { idbSet(SESSION_KEY, captureState()); } catch(e){} });
+
+restoreSession();
+document.getElementById('panelChips').addEventListener('click', e => {
+  const b = e.target.closest('.pchip'); if (!b) return;
+  onPanelChipClick(b.getAttribute('data-panel'), e.ctrlKey || e.metaKey);
+});
+</script>
+</body>
+</html>
